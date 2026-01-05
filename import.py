@@ -26,7 +26,7 @@ def clean_and_import():
 
             # NETTOYAGE +++
             # convertir les colonnes lat/long en nombres
-            if table_name == 'caracteristiques':
+            if table_name == 'lieux':
                 df['lat'] = df['lat'].astype(str).str.replace(',', '.').astype(float)
                 df['long'] = df['long'].astype(str).str.replace(',', '.').astype(float)
             

@@ -51,6 +51,27 @@ def main():
     print("accidents_par_mois.csv bien créé")
 
 
+    # 3 ACCIDENTS PAR JOUR
+    
+    query_jour = """
+    SELECT
+        jour,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM caracteristiques
+    WHERE jour IS NOT NULL AND jour != ''
+    GROUP BY jour
+    ORDER BY CAST(jour AS INTEGER);
+    """
+    df_jour = pd.read_sql_query(query_jour, conn)
+    df_jour.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_jour.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_jour.csv est bien créé")
+
+    conn.close()
+
 
 if __name__ == "__main__":
     main()

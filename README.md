@@ -46,3 +46,11 @@ profil > settings > SSHkeys > ajouter une clé --> coller le contenue
 
 5) recuperer les infos de main dans la branche au fur et a mesure
 `git rebase`
+
+
+### Faire un environmnent virtuel
+
+python -m venv venv
+source venv/bin/activate
+
+pip install pandas folium

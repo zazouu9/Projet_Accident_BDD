@@ -108,6 +108,23 @@ def main():
     )
     print("accidents_par_type_route.csv créé")
     
+    # 6. ACCIDENTS PAR SEXE
+    query_sexe = """
+    SELECT
+        sexe,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM usagers
+    WHERE sexe IN ('1', '2')
+    GROUP BY sexe
+    ORDER BY sexe;
+    """
+    df_sexe = pd.read_sql_query(query_sexe, conn)
+    df_sexe.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_sexe.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_sexe.csv créé")
 
     conn.close()
 if __name__ == "__main__":

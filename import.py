@@ -38,7 +38,7 @@ def clean_and_import():
             print(f"/!\\ Fichier introuvable : {file_path}")
 
     conn.close()
-    print("\nImportation terminée avec succès !")
+    print("\nImportation terminée avec succès !!!!")
 
 if __name__ == "__main__":
     clean_and_import()

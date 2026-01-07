@@ -133,11 +133,14 @@ def main():
         c.agg AS zone,
         l.catr,
         u.grav,
+        u.sexe,
+        v.catv,
         c.lat,
         c.long
     FROM caracteristiques c
     LEFT JOIN lieux l ON c.Num_Acc = l.Num_Acc
     LEFT JOIN usagers u ON c.Num_Acc = u.Num_Acc
+    LEFT JOIN vehicules v ON c.Num_Acc = v.Num_Acc
     WHERE c.lat IS NOT NULL 
         AND c.long IS NOT NULL
         AND c.lat != ''

@@ -39,6 +39,7 @@ for _, row in df.iterrows():
         fill=True,
         fill_opacity=0.7,
         popup=f"Num_Acc : {row['Num_Acc']}"
+        popup=
     ).add_to(m)
 
 # --- EXPORT ---

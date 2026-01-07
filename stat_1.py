@@ -71,7 +71,7 @@ def main():
     print("accidents_par_jour.csv est bien créé")
 
     conn.close()
-
+#test voir si ça foncctionne le git 
 
 if __name__ == "__main__":
     main()

@@ -70,8 +70,114 @@ def main():
     )
     print("accidents_par_jour.csv est bien créé")
 
-    conn.close()
-#test voir si ça foncctionne le git 
 
+    # 4 STATISTIQUES PAR GRAVITÉ
+    
+    query_gravite = """
+    SELECT
+        grav,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM usagers
+    GROUP BY grav;
+    """
+    
+    df_grav = pd.read_sql_query(query_gravite, conn)
+    df_grav.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_gravite.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_gravite.csv créé")
+
+    # 5. ACCIDENTS PAR TYPE DE ROUTE
+    query_route = """
+    SELECT
+        catr,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM lieux
+    WHERE catr IS NOT NULL AND catr != ''
+    GROUP BY catr
+    ORDER BY catr;
+    """
+    
+    df_route = pd.read_sql_query(query_route, conn)
+    df_route.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_type_route.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_type_route.csv créé")
+    
+    # 6. ACCIDENTS PAR SEXE
+    query_sexe = """
+    SELECT
+        sexe,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM usagers
+    WHERE sexe IN ('1', '2')
+    GROUP BY sexe
+    ORDER BY sexe;
+    """
+    df_sexe = pd.read_sql_query(query_sexe, conn)
+    df_sexe.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_sexe.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_sexe.csv créé")
+
+# 7. DONNÉES COMPLÈTES POUR LA CARTE
+    query_carte = """
+    SELECT DISTINCT
+        SUBSTR(c.hrmn, 1, 2) AS heure,
+        c.agg AS zone,
+        l.catr,
+        u.grav,
+        u.sexe,
+        v.catv,
+        c.lat,
+        c.long
+    FROM caracteristiques c
+    LEFT JOIN lieux l ON c.Num_Acc = l.Num_Acc
+    LEFT JOIN usagers u ON c.Num_Acc = u.Num_Acc
+    LEFT JOIN vehicules v ON c.Num_Acc = v.Num_Acc
+    WHERE c.lat IS NOT NULL 
+        AND c.long IS NOT NULL
+        AND c.lat != ''
+        AND c.long != ''
+    ORDER BY c.Num_Acc;
+    """
+    
+    df_carte = pd.read_sql_query(query_carte, conn)
+    df_carte.to_csv(
+        os.path.join(OUT_DIR, "accidents_carte_complet.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_carte_complet.csv créé")
+    
+    # 7. ACCIDENTS PAR TYPE DE VÉHICULE
+    query_vehicule = """
+    SELECT
+        catv,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM vehicules
+    WHERE catv IS NOT NULL 
+        AND catv != '' 
+        AND catv != '-1' 
+        AND catv != '0'
+    GROUP BY catv
+    ORDER BY CAST(catv AS INTEGER);
+    """
+    df_vehicule = pd.read_sql_query(query_vehicule, conn)
+    df_vehicule.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_type_vehicule.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_type_vehicule.csv créé")
+
+    conn.close()
+    
 if __name__ == "__main__":
     main()

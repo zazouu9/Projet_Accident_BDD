@@ -89,6 +89,25 @@ def main():
     )
     print("accidents_par_gravite.csv créé")
 
+    # 5. ACCIDENTS PAR TYPE DE ROUTE
+    query_route = """
+    SELECT
+        catr,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM lieux
+    WHERE catr IS NOT NULL AND catr != ''
+    GROUP BY catr
+    ORDER BY catr;
+    """
+    
+    df_route = pd.read_sql_query(query_route, conn)
+    df_route.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_type_route.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_type_route.csv créé")
+    
 
     conn.close()
 if __name__ == "__main__":

@@ -126,6 +126,28 @@ def main():
     )
     print("accidents_par_sexe.csv créé")
 
+    # 7. ACCIDENTS PAR ZONE (AGGLO / HORS AGGLO)
+    query_zone = """
+    SELECT
+            ROUND(lat, 2) AS lat_grid,
+            ROUND(long, 2) AS lon_grid,
+            COUNT(DISTINCT Num_Acc) AS nb_accidents
+        FROM caracteristiques
+        WHERE lat IS NOT NULL AND long IS NOT NULL
+        GROUP BY lat_grid, lon_grid
+        ORDER BY nb_accidents DESC
+        LIMIT 50;
+        """
+    df_zone = pd.read_sql_query(query_zone, conn)
+    df_zone.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_zone.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+
+    print("accidents_par_zone.csv créé")
+
     conn.close()
+    
 if __name__ == "__main__":
     main()

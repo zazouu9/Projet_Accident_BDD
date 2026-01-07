@@ -126,27 +126,32 @@ def main():
     )
     print("accidents_par_sexe.csv créé")
 
-    # 7. ACCIDENTS PAR ZONE (AGGLO / HORS AGGLO)
-    query_zone = """
-    SELECT
-            ROUND(lat, 2) AS lat_grid,
-            ROUND(long, 2) AS lon_grid,
-            COUNT(DISTINCT Num_Acc) AS nb_accidents
-        FROM caracteristiques
-        WHERE lat IS NOT NULL AND long IS NOT NULL
-        GROUP BY lat_grid, lon_grid
-        ORDER BY nb_accidents DESC
-        LIMIT 50;
-        """
-    df_zone = pd.read_sql_query(query_zone, conn)
-    df_zone.to_csv(
-        os.path.join(OUT_DIR, "accidents_par_zone.csv"),
+# 7. DONNÉES COMPLÈTES POUR LA CARTE
+    query_carte = """
+    SELECT DISTINCT
+        SUBSTR(c.hrmn, 1, 2) AS heure,
+        c.agg AS zone,
+        l.catr,
+        u.grav,
+        c.lat,
+        c.long
+    FROM caracteristiques c
+    LEFT JOIN lieux l ON c.Num_Acc = l.Num_Acc
+    LEFT JOIN usagers u ON c.Num_Acc = u.Num_Acc
+    WHERE c.lat IS NOT NULL 
+        AND c.long IS NOT NULL
+        AND c.lat != ''
+        AND c.long != ''
+    ORDER BY c.Num_Acc;
+    """
+    
+    df_carte = pd.read_sql_query(query_carte, conn)
+    df_carte.to_csv(
+        os.path.join(OUT_DIR, "accidents_carte_complet.csv"),
         index=False,
         encoding="utf-8"
     )
-
-    print("accidents_par_zone.csv créé")
-
+    print("accidents_carte_complet.csv créé")
     conn.close()
     
 if __name__ == "__main__":

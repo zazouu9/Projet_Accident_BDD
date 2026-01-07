@@ -70,8 +70,26 @@ def main():
     )
     print("accidents_par_jour.csv est bien créé")
 
-    conn.close()
-#test voir si ça foncctionne le git 
 
+    # 4 STATISTIQUES PAR GRAVITÉ
+    
+    query_gravite = """
+    SELECT
+        grav,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM usagers
+    GROUP BY grav;
+    """
+    
+    df_grav = pd.read_sql_query(query_gravite, conn)
+    df_grav.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_gravite.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_gravite.csv créé")
+
+
+    conn.close()
 if __name__ == "__main__":
     main()

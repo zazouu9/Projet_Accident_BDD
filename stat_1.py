@@ -152,6 +152,28 @@ def main():
         encoding="utf-8"
     )
     print("accidents_carte_complet.csv créé")
+    
+    # 7. ACCIDENTS PAR TYPE DE VÉHICULE
+    query_vehicule = """
+    SELECT
+        catv,
+        COUNT(DISTINCT Num_Acc) AS nb_accidents
+    FROM vehicules
+    WHERE catv IS NOT NULL 
+        AND catv != '' 
+        AND catv != '-1' 
+        AND catv != '0'
+    GROUP BY catv
+    ORDER BY CAST(catv AS INTEGER);
+    """
+    df_vehicule = pd.read_sql_query(query_vehicule, conn)
+    df_vehicule.to_csv(
+        os.path.join(OUT_DIR, "accidents_par_type_vehicule.csv"),
+        index=False,
+        encoding="utf-8"
+    )
+    print("accidents_par_type_vehicule.csv créé")
+
     conn.close()
     
 if __name__ == "__main__":

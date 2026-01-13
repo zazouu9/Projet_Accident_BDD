@@ -36,7 +36,7 @@ profil > settings > SSHkeys > ajouter une clé --> coller le contenue
 `git pull`
 
 2) voir les branche 
-`git brach `
+`git branch `
 
 3) creer une branche
 `git branch [nom]`

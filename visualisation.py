@@ -42,6 +42,6 @@ for _, row in df.iterrows():
     ).add_to(m)
 
 # --- EXPORT ---
-m.save("carte_accidents.html")
+m.save("static/carte_accidents.html")
 
 print("Carte générée : carte_accidents.html")

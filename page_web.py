@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect, url_for
 import pandas as pd
 import os
 
@@ -193,8 +193,23 @@ def index():
         r = request.form.get("route")
         v = request.form.get("catv")
         s = request.form.get("sexe")
+
+        # 1) Sauvegarde filtre au format clé:valeur
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
-            f.write(f"heure:{h}\ngravite:{g}\nroute:{r}\ncatv:{v}\nsexe:{s}")
+            f.write(f"heure:{h}\n")
+            f.write(f"gravite:{g}\n")
+            f.write(f"route:{r}\n")
+            f.write(f"catv:{v}\n")
+            f.write(f"sexe:{s}\n")
+
+        # 2) Lance le script qui régénère la carte (bloquant => carte prête après)
+        try:
+            subprocess.run([sys.executable, "visualisation.py"], check=True)
+        except Exception as e:
+            print(f"Erreur génération carte: {e}")
+
+        # 3) Redirige pour éviter le re-POST quand tu refresh (pattern Post/Redirect/Get)
+        return redirect(url_for("index"))
 
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 

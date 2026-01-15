@@ -99,18 +99,7 @@ if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
 else:
     for _, row in df_filtre.iterrows():
-        # On prépare les variables proprement AVANT la f-string pour éviter les erreurs de guillemets
-        h = f"{int(row['heure'])}h" if not pd.isna(row['heure']) else "N/A"
-        g = f"{int(row['grav'])}" if not pd.isna(row['grav']) else "N/A"
-        
-        # Gestion propre du libellé de la route
-        r_val = to_int(row['catr'])
-        r_txt = CATR_TO_ROUTE.get(r_val, f"Code {r_val}") if r_val is not None else "N/A"
-        
-        v = f"{int(row['catv'])}" if not pd.isna(row['catv']) else "N/A"
-        s = "Masculin" if row['sexe'] == 1 else "Féminin" if row['sexe'] == 2 else "N/A"
-
-        popup_txt = f"Heure: {h} | Gravité: {g} | Route: {r_txt} | Véhicule: {v} | Sexe: {s}"
+        popup_txt = popup_texte_ligne(row)
 
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
@@ -121,7 +110,41 @@ else:
             popup=popup_txt
         ).add_to(m)
 
-# Créer le dossier static s'il n'existe pas
-os.makedirs(os.path.dirname(OUT_HTML), exist_ok=True)
+
+def popup_texte_ligne(row):
+    """
+    Retourne une popup en texte brut (pas d'HTML) qui contient toute la ligne.
+    Ajoute aussi les libellés pour catr et catv.
+    """
+    # Valeurs brutes
+    heure = int(row["heure"]) if pd.notna(row["heure"]) else row["heure"]
+    zone  = int(row["zone"])  if "zone" in row and pd.notna(row["zone"]) else row.get("zone", "")
+    catr  = int(row["catr"])  if pd.notna(row["catr"]) else row["catr"]
+    grav  = int(row["grav"])  if pd.notna(row["grav"]) else row["grav"]
+    sexe  = int(row["sexe"])  if pd.notna(row["sexe"]) else row["sexe"]
+    catv  = int(row["catv"])  if pd.notna(row["catv"]) else row["catv"]
+
+    # Libellés
+    route_lbl = CATR_TO_ROUTE.get(catr, f"Inconnu ({catr})") if catr is not None else "Inconnu"
+    veh_lbl   = CATV_TO_LABEL.get(catv, f"Inconnu ({catv})") if catv is not None else "Inconnu"
+
+    # Coordonnées (on garde tel quel)
+    lat = row["lat"]
+    lon = row["long"]
+
+    # Texte brut multi-lignes
+    return (
+        "ACCIDENT (ligne complète)\n"
+        f"heure: {heure}\n"
+        f"zone: {zone}\n"
+        f"catr: {catr} ({route_lbl})\n"
+        f"grav: {grav}\n"
+        f"sexe: {sexe}\n"
+        f"catv: {catv} ({veh_lbl})\n"
+        f"lat: {lat}\n"
+        f"long: {lon}"
+    )
+
+
 m.save(OUT_HTML)
 print(f"Succès : Carte générée avec {len(df_filtre)} points dans {OUT_HTML}")

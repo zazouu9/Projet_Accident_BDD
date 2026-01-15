@@ -35,7 +35,6 @@ def to_int(x):
         return None
 
 def popup_pre(row):
-    """Popup avec 1 champ par ligne (HTML minimal <pre>)."""
     heure = int(row["heure"])
     zone = int(row["zone"])
     catr = int(row["catr"])
@@ -44,7 +43,7 @@ def popup_pre(row):
     catv = int(row["catv"])
 
     lines = [
-        f"Heure : {heure}h",
+        f" Heure : {heure}h",
         f"Zone : {ZONE_TO_LABEL.get(zone, 'Inconnu')} ({zone})",
         f"Type de route : {CATR_TO_ROUTE.get(catr, 'Inconnu')} ({catr})",
         f"Gravité : {GRAV_TO_LABEL.get(grav, 'Inconnu')} ({grav})",
@@ -54,11 +53,20 @@ def popup_pre(row):
         f"Long : {row['long']}",
     ]
 
-    longest = max(len(s) for s in lines)
-    max_width = min(max(340, longest * 8), 1200)
+    # FORCER les retours à la ligne (Windows + compat)
+    txt = "\r\n".join(lines)
 
-    txt = "\n".join(lines)
-    return f"<pre style='margin:0'>{html.escape(txt)}</pre>", max_width
+    # <pre> = respecte les retours à la ligne à coup sûr
+    popup_html = (
+        "<pre style='margin:0; white-space:pre; font-family:inherit;'>"
+        f"{html.escape(txt)}"
+        "</pre>"
+    )
+
+    # Largeur raisonnable (sinon ça devient ridicule)
+    return popup_html, 600
+
+
 
 # --- CHARGEMENT CSV ---
 if not os.path.exists(CSV_PATH):
@@ -138,15 +146,17 @@ if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
 else:
     for _, row in df_filtre.iterrows():
-        popup, width = popup_pre(row)
+        popup_html, w = popup_pre(row)
+
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
             radius=4,
             color="red",
             fill=True,
             fill_opacity=0.7,
-            popup=folium.Popup(popup, max_width=width),
+            popup=folium.Popup(popup_html, max_width=w),
         ).add_to(m)
+
 
 m.save(OUT_HTML)
 print(f"Succès : Carte générée avec {len(df_filtre)} points dans {OUT_HTML}")

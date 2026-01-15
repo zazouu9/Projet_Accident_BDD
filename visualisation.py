@@ -1,4 +1,3 @@
-# visualisation.py
 import os
 import pandas as pd
 import folium
@@ -21,42 +20,38 @@ ROUTE_TO_CATR = {
 CATR_TO_ROUTE = {v: k for k, v in ROUTE_TO_CATR.items()}
 
 def read_filters_txt(path: str) -> dict:
-    """Lit un fichier clé:valeur (1 filtre par ligne)."""
     filtres = {}
     if not os.path.exists(path):
         return filtres
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if not line or ":" not in line:
+            if not line or ":" in line == False:
                 continue
-            k, v = line.split(":", 1)
-            filtres[k.strip()] = v.strip()
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                filtres[parts[0].strip()] = parts[1].strip()
     return filtres
 
 def to_int(x):
-    """Convertit '01' -> 1, ' 7 ' -> 7, sinon None."""
-    if x is None:
-        return None
+    if x is None: return None
     x = str(x).strip()
-    if x == "":
-        return None
     try:
         return int(x)
     except:
         return None
 
 # --- chargement CSV ---
-df = pd.read_csv(CSV_PATH, dtype=str)
+if not os.path.exists(CSV_PATH):
+    print(f"Erreur : Le fichier {CSV_PATH} est introuvable.")
+    exit(1)
 
-needed = ["heure", "catr", "grav", "sexe", "catv", "lat", "long"]
-missing = [c for c in needed if c not in df.columns]
-if missing:
-    raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
+df = pd.read_csv(CSV_PATH, dtype=str)
 
 # conversions
 for c in ["heure", "catr", "grav", "sexe", "catv"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
 df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
 df["long"] = pd.to_numeric(df["long"], errors="coerce")
@@ -65,66 +60,57 @@ df = df.dropna(subset=["lat", "long"]).copy()
 # --- lecture filtres txt ---
 f = read_filters_txt(FILTRE_PATH)
 
-# --- application filtres (SEULEMENT si présent et non vide) ---
+# --- application filtres ---
 mask = pd.Series(True, index=df.index)
 
-# heure
 hv = to_int(f.get("heure"))
 if hv is not None:
     mask &= (df["heure"] == hv)
 
-# gravité (une valeur, ou plusieurs séparées par ';' si jamais tu reviens à ça)
 grav_txt = f.get("gravite", "").strip()
 if grav_txt != "":
-    grav_list = []
-    for part in grav_txt.split(";"):
-        gi = to_int(part)
-        if gi is not None:
-            grav_list.append(gi)
+    grav_list = [to_int(p) for p in grav_txt.split(";") if to_int(p) is not None]
     if grav_list:
         mask &= df["grav"].isin(grav_list)
 
-# route (texte -> catr)
 route_txt = f.get("route", "").strip()
-if route_txt != "":
-    catr = ROUTE_TO_CATR.get(route_txt)
-    if catr is not None:
-        mask &= (df["catr"] == catr)
+if route_txt != "" and route_txt in ROUTE_TO_CATR:
+    mask &= (df["catr"] == ROUTE_TO_CATR[route_txt])
 
-# catv
 cv = to_int(f.get("catv"))
 if cv is not None:
     mask &= (df["catv"] == cv)
 
-# sexe
 sv = to_int(f.get("sexe"))
 if sv is not None:
     mask &= (df["sexe"] == sv)
 
 df_filtre = df[mask].copy()
 
-# --- debug utile ---
-print("Filtres lus :", f)
-print("Total lignes CSV :", len(df))
-print("Total lignes filtrées :", len(df_filtre))
-
 # --- génération carte ---
-if df_filtre.empty:
-    map_center = [df["lat"].mean(), df["long"].mean()]
-    m = folium.Map(location=map_center, zoom_start=6)
-    folium.Marker(map_center, popup="Aucun accident ne correspond au filtre.").add_to(m)
-else:
-    map_center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
-    m = folium.Map(location=map_center, zoom_start=6)
+# Centre par défaut sur la France si vide
+center = [46.2276, 2.2137]
+if not df_filtre.empty:
+    center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
 
+m = folium.Map(location=center, zoom_start=6)
+
+if df_filtre.empty:
+    folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
+else:
     for _, row in df_filtre.iterrows():
-        popup_txt = " | ".join([
-            f"Heure: {int(row['heure'])}",
-            f"Gravité: {int(row['grav'])}",
-            f"Route: {CATR_TO_ROUTE.get(int(row['catr']), f'catr={int(row['catr'])}')}",
-            f"Véhicule (catv): {int(row['catv'])}",
-            f"Sexe: {int(row['sexe'])}",
-        ])
+        # On prépare les variables proprement AVANT la f-string pour éviter les erreurs de guillemets
+        h = f"{int(row['heure'])}h" if not pd.isna(row['heure']) else "N/A"
+        g = f"{int(row['grav'])}" if not pd.isna(row['grav']) else "N/A"
+        
+        # Gestion propre du libellé de la route
+        r_val = to_int(row['catr'])
+        r_txt = CATR_TO_ROUTE.get(r_val, f"Code {r_val}") if r_val is not None else "N/A"
+        
+        v = f"{int(row['catv'])}" if not pd.isna(row['catv']) else "N/A"
+        s = "Masculin" if row['sexe'] == 1 else "Féminin" if row['sexe'] == 2 else "N/A"
+
+        popup_txt = f"Heure: {h} | Gravité: {g} | Route: {r_txt} | Véhicule: {v} | Sexe: {s}"
 
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
@@ -135,7 +121,7 @@ else:
             popup=popup_txt
         ).add_to(m)
 
+# Créer le dossier static s'il n'existe pas
+os.makedirs(os.path.dirname(OUT_HTML), exist_ok=True)
 m.save(OUT_HTML)
-print(f"Carte générée : {OUT_HTML}")
-
-#test
+print(f"Succès : Carte générée avec {len(df_filtre)} points dans {OUT_HTML}")

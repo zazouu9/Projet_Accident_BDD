@@ -237,6 +237,7 @@ def index():
         # 2) Lance le script qui régénère la carte (bloquant => carte prête après)
         try:
             subprocess.run([sys.executable, "visualisation.py"], check=True)
+            
         except Exception as e:
             print(f"Erreur génération carte: {e}")
 

@@ -22,7 +22,19 @@ def obtenir_stats_completes():
     
     label_gravite = {"1": "Indemne", "2": "Tué", "3": "Hospit.", "4": "Léger"}
     label_sexe = {"1": "Masculin", "2": "Féminin"}
-    
+    label_vehicule = {
+        "00": "Indéterminable", "01": "Bicyclette", "02": "Cyclomoteur <50cm3",
+        "03": "Voiturette", "07": "VL seul", "10": "VU seul", "13": "PL 3,5T-7,5T",
+        "14": "PL > 7,5T", "15": "PL > 3,5T + rem.", "16": "Tracteur seul",
+        "17": "Tracteur + semi", "20": "Engin spécial", "21": "Tracteur agricole",
+        "30": "Scooter < 50cm3", "31": "Moto 50-125cm3", "32": "Scooter 50-125cm3",
+        "33": "Moto > 125cm3", "34": "Scooter > 125cm3", "35": "Quad léger",
+        "36": "Quad lourd", "37": "Autobus", "38": "Autocar", "39": "Train",
+        "40": "Tramway", "41": "3RM <= 50cm3", "42": "3RM 50-125cm3",
+        "43": "3RM > 125cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
+        "80": "VAE", "99": "Autre"
+    }
+
     stats = {
         "gravite": 0, "heure": 0, "sexe": 0, "route": 0, "vehicule": 0, 
         "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
@@ -38,43 +50,35 @@ def obtenir_stats_completes():
             codes_g = filtres["gravite"].split(";")
             stats["l_grav"] = ", ".join([label_gravite.get(c, c) for c in codes_g if c])
         
-        # Affichage de la plage horaire dans le label
         h_min = filtres.get("h_min")
         h_max = filtres.get("h_max")
-        if h_min and h_max:
-            stats["l_heure"] = f"De {h_min}h à {h_max}h"
-        elif h_min:
-            stats["l_heure"] = f"Dès {h_min}h"
-        elif h_max:
-            stats["l_heure"] = f"Jusqu'à {h_max}h"
+        if h_min and h_max: stats["l_heure"] = f"De {h_min}h à {h_max}h"
+        elif h_min: stats["l_heure"] = f"Dès {h_min}h"
+        elif h_max: stats["l_heure"] = f"Jusqu'à {h_max}h"
 
-        # --- filtrage du DataFrame Complet ---
+        if filtres.get("sexe"): stats["l_sexe"] = label_sexe.get(filtres["sexe"], "Tous")
+        if filtres.get("route"): stats["l_route"] = filtres["route"]
+        if filtres.get("catv"): stats["l_veh"] = label_vehicule.get(filtres["catv"], "Tous")
+
+        # --- FILTRAGE CUMULÉ (Bas) ---
         if os.path.exists("results/accidents_carte_complet.csv"):
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
             mask = pd.Series([True] * len(df_all))
 
-            # Filtrage par plage horaire
-            if h_min:
-                mask &= (df_all['heure'] >= int(h_min))
-            if h_max:
-                mask &= (df_all['heure'] <= int(h_max))
-            
-            if filtres.get("gravite"):
-                mask &= (df_all['grav'].isin([int(x) for x in filtres["gravite"].split(";")]))
-            if filtres.get("catv"):
-                mask &= (df_all['catv'] == int(filtres["catv"]))
+            if h_min: mask &= (df_all['heure'] >= int(h_min))
+            if h_max: mask &= (df_all['heure'] <= int(h_max))
+            if filtres.get("gravite"): mask &= (df_all['grav'].isin([int(x) for x in filtres["gravite"].split(";")]))
+            if filtres.get("catv"): mask &= (df_all['catv'] == int(filtres["catv"]))
             if filtres.get("route"):
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
                 mask &= (df_all['catr'] == mapping_r.get(filtres["route"]))
-            if filtres.get("sexe"):
-                mask &= (df_all['sexe'] == int(filtres["sexe"]))
+            if filtres.get("sexe"): mask &= (df_all['sexe'] == int(filtres["sexe"]))
             
             df_filtre = df_all[mask]
             stats["hommes_filtres"] = len(df_filtre[df_filtre['sexe'] == 1])
             stats["femmes_filtres"] = len(df_filtre[df_filtre['sexe'] == 2])
             stats["cumul_total"] = len(df_filtre)
-            # Pour la stat à gauche (Heure), on affiche le total de la plage
-            stats["heure"] = len(df_filtre)
+            stats["heure"] = len(df_filtre) # Affiche le nbr d'accidents de la plage
 
     except Exception as e:
         print(f"Erreur : {e}")
@@ -88,7 +92,7 @@ HTML_PAGE = """
     <title>Dashboard Accidents</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        #sidebar { width: 320px; padding: 15px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; display: flex; flex-direction: column; }
+        #sidebar { width: 340px; padding: 15px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; display: flex; flex-direction: column; }
         .filter-section { flex-shrink: 0; border-bottom: 2px solid #ddd; padding-bottom: 15px; margin-bottom: 15px; }
         .sidebar-stats { flex-grow: 1; }
         .sidebar-stat-item { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #ddd; }
@@ -98,18 +102,14 @@ HTML_PAGE = """
         #main-content { flex-grow: 1; display: flex; flex-direction: column; }
         #map-container { flex-grow: 1; width: 100%; }
         #info-panel-cumul { height: 80px; padding: 5px 25px; background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; }
-        .gender-stats-box { display: flex; gap: 40px; }
         .stat-box-bottom { text-align: center; }
-        .bottom-label { font-size: 0.75em; text-transform: uppercase; opacity: 0.8; margin-bottom: 4px; }
-        .bottom-value { font-size: 1.5em; font-weight: bold; }
-        .total-value { color: #f1c40f; font-size: 1.8em; }
-        .gender-blue { color: #3498db; }
-        label { display: block; margin-top: 8px; font-size: 0.9em; }
+        .total-value { color: #f1c40f; font-size: 1.8em; font-weight: bold; }
+        .gender-blue { color: #3498db; font-size: 1.5em; font-weight: bold; }
         .range-container { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-        .range-container input { width: 60px; }
+        .range-container input { width: 70px; padding: 4px; }
         button { margin-top: 15px; padding: 10px; width: 100%; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
-        fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; }
-        select { width: 100%; padding: 4px; }
+        fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding: 10px; }
+        select { width: 100%; padding: 4px; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -141,14 +141,41 @@ HTML_PAGE = """
                 </select>
             </label>
 
-            <label>Véhicule :
-                <select name="catv">
-                    <option value="">-- Tous les véhicules --</option>
-                    <option value="07">07 – VL seul</option>
-                    <option value="01">01 – Bicyclette</option>
-                    <option value="33">33 – Moto</option>
-                </select>
-            </label>
+            <label>Véhicule :</label>
+            <select name="catv">
+                <option value="">-- Tous les véhicules --</option>
+                <option value="00">00 – Indéterminable</option>
+                <option value="01">01 – Bicyclette</option>
+                <option value="02">02 – Cyclomoteur <50cm3</option>
+                <option value="03">03 – Voiturette</option>
+                <option value="07">07 – VL seul</option>
+                <option value="10">10 – VU seul 1,5T-3,5T</option>
+                <option value="13">13 – PL seul 3,5T-7,5T</option>
+                <option value="14">14 – PL seul > 7,5T</option>
+                <option value="15">15 – PL > 3,5T + remorque</option>
+                <option value="16">16 – Tracteur routier seul</option>
+                <option value="17">17 – Tracteur + semi</option>
+                <option value="20">20 – Engin spécial</option>
+                <option value="21">21 – Tracteur agricole</option>
+                <option value="30">30 – Scooter < 50 cm3</option>
+                <option value="31">31 – Moto 50-125 cm3</option>
+                <option value="32">32 – Scooter 50-125 cm3</option>
+                <option value="33">33 – Moto > 125 cm3</option>
+                <option value="34">34 – Scooter > 125 cm3</option>
+                <option value="35">35 – Quad léger <= 50 cm3</option>
+                <option value="36">36 – Quad lourd > 50 cm3</option>
+                <option value="37">37 – Autobus</option>
+                <option value="38">38 – Autocar</option>
+                <option value="39">39 – Train</option>
+                <option value="40">40 – Tramway</option>
+                <option value="41">41 – 3RM <= 50 cm3</option>
+                <option value="42">42 – 3RM 50-125 cm3</option>
+                <option value="43">43 – 3RM > 125 cm3</option>
+                <option value="50">50 – EDP à moteur</option>
+                <option value="60">60 – EDP sans moteur</option>
+                <option value="80">80 – VAE</option>
+                <option value="99">99 – Autre véhicule</option>
+            </select>
 
             <fieldset><legend>Sexe</legend>
                 <label><input type="radio" name="sexe" value=""> Tous</label>
@@ -171,6 +198,10 @@ HTML_PAGE = """
             <span class="stat-label-active">{{ stats.l_grav }}</span>
             <div class="sidebar-stat-value">{{ stats.gravite }} accidents</div>
         </div>
+        <div class="sidebar-stat-item">
+            <h4>Véhicule</h4>
+            <span class="stat-label-active">{{ stats.l_veh }}</span>
+        </div>
     </div>
 </div>
 
@@ -179,19 +210,19 @@ HTML_PAGE = """
         <iframe src="{{ url_for('static', filename='carte_accidents.html') }}" width="100%" height="100%" style="border:none;"></iframe>
     </div>
     <div id="info-panel-cumul">
-        <div class="gender-stats-box">
+        <div style="display: flex; gap: 40px;">
             <div class="stat-box-bottom">
-                <div class="bottom-label">Hommes</div>
-                <div class="bottom-value gender-blue">{{ stats.hommes_filtres }}</div>
+                <div style="font-size: 0.75em; opacity: 0.8;">HOMMES</div>
+                <div class="gender-blue">{{ stats.hommes_filtres }}</div>
             </div>
             <div class="stat-box-bottom">
-                <div class="bottom-label">Femmes</div>
-                <div class="bottom-value gender-blue">{{ stats.femmes_filtres }}</div>
+                <div style="font-size: 0.75em; opacity: 0.8;">FEMMES</div>
+                <div class="gender-blue">{{ stats.femmes_filtres }}</div>
             </div>
         </div>
         <div class="stat-box-bottom">
-            <div class="bottom-label">Total (Filtres croisés)</div>
-            <div class="bottom-value total-value">{{ stats.cumul_total }}</div>
+            <div style="font-size: 0.75em; opacity: 0.8;">TOTAL FILTRÉ</div>
+            <div class="total-value">{{ stats.cumul_total }}</div>
         </div>
     </div>
 </div>

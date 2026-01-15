@@ -118,13 +118,7 @@ else:
     m = folium.Map(location=map_center, zoom_start=6)
 
     for _, row in df_filtre.iterrows():
-        popup_txt = " | ".join([
-            f"Heure: {int(row['heure'])}",
-            f"Gravité: {int(row['grav'])}",
-            f"Route: {CATR_TO_ROUTE.get(int(row['catr']), f'catr={int(row['catr'])}')}",
-            f"Véhicule (catv): {int(row['catv'])}",
-            f"Sexe: {int(row['sexe'])}",
-        ])
+        popup_txt = popup_texte_ligne(row)
 
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
@@ -134,6 +128,42 @@ else:
             fill_opacity=0.7,
             popup=popup_txt
         ).add_to(m)
+
+
+def popup_texte_ligne(row):
+    """
+    Retourne une popup en texte brut (pas d'HTML) qui contient toute la ligne.
+    Ajoute aussi les libellés pour catr et catv.
+    """
+    # Valeurs brutes
+    heure = int(row["heure"]) if pd.notna(row["heure"]) else row["heure"]
+    zone  = int(row["zone"])  if "zone" in row and pd.notna(row["zone"]) else row.get("zone", "")
+    catr  = int(row["catr"])  if pd.notna(row["catr"]) else row["catr"]
+    grav  = int(row["grav"])  if pd.notna(row["grav"]) else row["grav"]
+    sexe  = int(row["sexe"])  if pd.notna(row["sexe"]) else row["sexe"]
+    catv  = int(row["catv"])  if pd.notna(row["catv"]) else row["catv"]
+
+    # Libellés
+    route_lbl = CATR_TO_ROUTE.get(catr, f"Inconnu ({catr})") if catr is not None else "Inconnu"
+    veh_lbl   = CATV_TO_LABEL.get(catv, f"Inconnu ({catv})") if catv is not None else "Inconnu"
+
+    # Coordonnées (on garde tel quel)
+    lat = row["lat"]
+    lon = row["long"]
+
+    # Texte brut multi-lignes
+    return (
+        "ACCIDENT (ligne complète)\n"
+        f"heure: {heure}\n"
+        f"zone: {zone}\n"
+        f"catr: {catr} ({route_lbl})\n"
+        f"grav: {grav}\n"
+        f"sexe: {sexe}\n"
+        f"catv: {catv} ({veh_lbl})\n"
+        f"lat: {lat}\n"
+        f"long: {lon}"
+    )
+
 
 m.save(OUT_HTML)
 print(f"Carte générée : {OUT_HTML}")

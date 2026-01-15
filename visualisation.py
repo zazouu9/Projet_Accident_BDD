@@ -1,23 +1,12 @@
 import os
 import pandas as pd
 import folium
+import html
+from dictionnaire import *
 
 CSV_PATH = "results/accidents_carte_complet.csv"
 FILTRE_PATH = "resultat_filtre.txt"
 OUT_HTML = "static/carte_accidents.html"
-
-# route libellé -> catr
-ROUTE_TO_CATR = {
-    "Autoroute": 1,
-    "Nationale": 2,
-    "Départementale": 3,
-    "Communale": 4,
-    "Hors réseau public": 5,
-    "Parc de stationnement ouvert à la circulation publique": 6,
-    "Routes de métropole urbaine": 7,
-    "Autre": 9,
-}
-CATR_TO_ROUTE = {v: k for k, v in ROUTE_TO_CATR.items()}
 
 def read_filters_txt(path: str) -> dict:
     filtres = {}
@@ -40,6 +29,37 @@ def to_int(x):
         return int(x)
     except:
         return None
+
+def popup_html(row):
+    heure = int(row["heure"])
+    zone = int(row["zone"])
+    catr = int(row["catr"])
+    grav = int(row["grav"])
+    sexe = int(row["sexe"])
+    catv = int(row["catv"])
+
+    lines = [
+        f"Heure : {heure}h",
+        f"Zone : {ZONE_TO_LABEL.get(zone, 'Inconnu')} ({zone})",
+        f"Type de route : {CATR_TO_ROUTE.get(catr, 'Inconnu')} ({catr})",
+        f"Gravité : {GRAV_TO_LABEL.get(grav, 'Inconnu')} ({grav})",
+        f"Sexe : {SEXE_TO_LABEL.get(sexe, 'Inconnu')} ({sexe})",
+        f"Type de vehicule : {CATV_TO_LABEL.get(catv, 'Inconnu')} ({catv})",
+        f"Lat : {row['lat']}",
+        f"Long : {row['long']}",
+    ]
+
+    # largeur dynamique estimée via la ligne la plus longue
+    longest = max(len(s) for s in lines)
+    max_width = min(max(340, longest * 8), 1200)
+
+    # HTML minimal: <pre> = 1 ligne par champ garanti
+    txt = "\n".join(lines)
+    popup = f"<pre style='margin:0'>{html.escape(txt)}</pre>"
+
+    return popup, max_width
+
+
 
 # --- chargement CSV ---
 if not os.path.exists(CSV_PATH):
@@ -74,8 +94,8 @@ if grav_txt != "":
         mask &= df["grav"].isin(grav_list)
 
 route_txt = f.get("route", "").strip()
-if route_txt != "" and route_txt in ROUTE_TO_CATR:
-    mask &= (df["catr"] == ROUTE_TO_CATR[route_txt])
+if route_txt != "" and route_txt in CATR_TO_ROUTE:
+    mask &= (df["catr"] == CATR_TO_ROUTE[route_txt])
 
 cv = to_int(f.get("catv"))
 if cv is not None:
@@ -99,7 +119,7 @@ if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
 else:
     for _, row in df_filtre.iterrows():
-        popup_txt = popup_texte_ligne(row)
+        popup, width = popup_html(row)
 
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
@@ -107,43 +127,9 @@ else:
             color="red",
             fill=True,
             fill_opacity=0.7,
-            popup=popup_txt
+            popup=folium.Popup(popup, max_width=width),
         ).add_to(m)
 
-
-def popup_texte_ligne(row):
-    """
-    Retourne une popup en texte brut (pas d'HTML) qui contient toute la ligne.
-    Ajoute aussi les libellés pour catr et catv.
-    """
-    # Valeurs brutes
-    heure = int(row["heure"]) if pd.notna(row["heure"]) else row["heure"]
-    zone  = int(row["zone"])  if "zone" in row and pd.notna(row["zone"]) else row.get("zone", "")
-    catr  = int(row["catr"])  if pd.notna(row["catr"]) else row["catr"]
-    grav  = int(row["grav"])  if pd.notna(row["grav"]) else row["grav"]
-    sexe  = int(row["sexe"])  if pd.notna(row["sexe"]) else row["sexe"]
-    catv  = int(row["catv"])  if pd.notna(row["catv"]) else row["catv"]
-
-    # Libellés
-    route_lbl = CATR_TO_ROUTE.get(catr, f"Inconnu ({catr})") if catr is not None else "Inconnu"
-    veh_lbl   = CATV_TO_LABEL.get(catv, f"Inconnu ({catv})") if catv is not None else "Inconnu"
-
-    # Coordonnées (on garde tel quel)
-    lat = row["lat"]
-    lon = row["long"]
-
-    # Texte brut multi-lignes
-    return (
-        "ACCIDENT (ligne complète)\n"
-        f"heure: {heure}\n"
-        f"zone: {zone}\n"
-        f"catr: {catr} ({route_lbl})\n"
-        f"grav: {grav}\n"
-        f"sexe: {sexe}\n"
-        f"catv: {catv} ({veh_lbl})\n"
-        f"lat: {lat}\n"
-        f"long: {lon}"
-    )
 
 
 m.save(OUT_HTML)

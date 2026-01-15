@@ -9,8 +9,8 @@ app = Flask(__name__)
 def lire_filtres():
     """Lit les derniers filtres enregistrés."""
     filtres = {}
-    if os.path.exists("resultat_filter.txt"):
-        with open("resultat_filter.txt", "r", encoding="utf-8") as f:
+    if os.path.exists("resultat_filtre.txt"):
+        with open("resultat_filtre.txt", "r", encoding="utf-8") as f:
             for line in f:
                 if ":" in line:
                     cle, valeur = line.strip().split(":", 1)
@@ -240,16 +240,16 @@ def index():
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
 
-        with open("resultat_filter.txt", "w", encoding="utf-8") as f:
+        with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(f"h_min:{h_min}\nh_max:{h_max}\ngravite:{g}\nroute:{r}\ncatv:{v}\nsexe:{s}\n")
 
         try:
             subprocess.run([sys.executable, "visualisation.py"], check=True)
-
+            print("visualisation")
         except Exception as e:
             print(f"Erreur génération carte: {e}")
 
-        return redirect(url_for("index"))
+        #return redirect(url_for("index"))
 
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 

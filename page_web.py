@@ -24,13 +24,13 @@ def obtenir_stats_completes():
     label_sexe = {"1": "Masculin", "2": "Féminin"}
     label_vehicule = {
         "00": "Indéterminable", "01": "Bicyclette", "02": "Cyclomoteur <50cm3",
-        "03": "Voiturette", "07": "VL seul", "10": "VU seul", "13": "PL 3,5T-7,5T",
-        "14": "PL > 7,5T", "15": "PL > 3,5T + rem.", "16": "Tracteur seul",
-        "17": "Tracteur + semi", "20": "Engin spécial", "21": "Tracteur agricole",
-        "30": "Scooter < 50cm3", "31": "Moto 50-125cm3", "32": "Scooter 50-125cm3",
-        "33": "Moto > 125cm3", "34": "Scooter > 125cm3", "35": "Quad léger",
-        "36": "Quad lourd", "37": "Autobus", "38": "Autocar", "39": "Train",
-        "40": "Tramway", "41": "3RM <= 50cm3", "42": "3RM 50-125cm3",
+        "03": "Voiturette", "07": "VL seul", "10": "VU seul 1,5T-3,5T",
+        "13": "PL seul 3,5T-7,5T", "14": "PL seul > 7,5T", "15": "PL > 3,5T + rem.",
+        "16": "Tracteur seul", "17": "Tracteur + semi", "20": "Engin spécial",
+        "21": "Tracteur agricole", "30": "Scooter < 50cm3", "31": "Moto 50-125cm3",
+        "32": "Scooter 50-125cm3", "33": "Moto > 125cm3", "34": "Scooter > 125cm3",
+        "35": "Quad léger", "36": "Quad lourd", "37": "Autobus", "38": "Autocar",
+        "39": "Train", "40": "Tramway", "41": "3RM <= 50cm3", "42": "3RM 50-125cm3",
         "43": "3RM > 125cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
         "80": "VAE", "99": "Autre"
     }
@@ -45,40 +45,60 @@ def obtenir_stats_completes():
         return stats
 
     try:
-        # --- RÉCUPÉRATION DES LABELS ---
-        if filtres.get("gravite"):
-            codes_g = filtres["gravite"].split(";")
-            stats["l_grav"] = ", ".join([label_gravite.get(c, c) for c in codes_g if c])
-        
-        h_min = filtres.get("h_min")
-        h_max = filtres.get("h_max")
-        if h_min and h_max: stats["l_heure"] = f"De {h_min}h à {h_max}h"
-        elif h_min: stats["l_heure"] = f"Dès {h_min}h"
-        elif h_max: stats["l_heure"] = f"Jusqu'à {h_max}h"
-
-        if filtres.get("sexe"): stats["l_sexe"] = label_sexe.get(filtres["sexe"], "Tous")
-        if filtres.get("route"): stats["l_route"] = filtres["route"]
-        if filtres.get("catv"): stats["l_veh"] = label_vehicule.get(filtres["catv"], "Tous")
-
-        # --- FILTRAGE CUMULÉ (Bas) ---
         if os.path.exists("results/accidents_carte_complet.csv"):
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
-            mask = pd.Series([True] * len(df_all))
-
-            if h_min: mask &= (df_all['heure'] >= int(h_min))
-            if h_max: mask &= (df_all['heure'] <= int(h_max))
-            if filtres.get("gravite"): mask &= (df_all['grav'].isin([int(x) for x in filtres["gravite"].split(";")]))
-            if filtres.get("catv"): mask &= (df_all['catv'] == int(filtres["catv"]))
-            if filtres.get("route"):
-                mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                mask &= (df_all['catr'] == mapping_r.get(filtres["route"]))
-            if filtres.get("sexe"): mask &= (df_all['sexe'] == int(filtres["sexe"]))
             
-            df_filtre = df_all[mask]
+            h_min = filtres.get("h_min")
+            h_max = filtres.get("h_max")
+            grav_filtre = filtres.get("gravite")
+            catv_filtre = filtres.get("catv")
+            route_filtre = filtres.get("route")
+            sexe_filtre = filtres.get("sexe")
+
+            # --- 1. CALCUL DES LABELS ---
+            if grav_filtre:
+                stats["l_grav"] = ", ".join([label_gravite.get(c, c) for c in grav_filtre.split(";") if c])
+            if h_min or h_max:
+                stats["l_heure"] = f"De {h_min or 0}h à {h_max or 23}h"
+            if sexe_filtre: stats["l_sexe"] = label_sexe.get(sexe_filtre, "Tous")
+            if route_filtre: stats["l_route"] = route_filtre
+            if catv_filtre: stats["l_veh"] = label_vehicule.get(catv_filtre, "Tous")
+
+            # --- 2. CALCULS INDIVIDUELS (STATISTIQUES GÉNÉRALES À GAUCHE) ---
+            # On calcule le nombre total d'accidents pour CHAQUE critère indépendamment
+            
+            # Gravité (ex: Total des tués dans toute la base)
+            if grav_filtre:
+                stats["gravite"] = len(df_all[df_all['grav'].isin([int(x) for x in grav_filtre.split(";")])])
+            
+            # Véhicule (ex: Total des accidents impliquant ce véhicule)
+            if catv_filtre:
+                stats["vehicule"] = len(df_all[df_all['catv'] == int(catv_filtre)])
+            
+            # Route (ex: Total sur Autoroute)
+            if route_filtre:
+                mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
+                stats["route"] = len(df_all[df_all['catr'] == mapping_r.get(route_filtre)])
+
+            # Heure (Plage horaire sur toute la base)
+            h_mask = pd.Series([True] * len(df_all))
+            if h_min: h_mask &= (df_all['heure'] >= int(h_min))
+            if h_max: h_mask &= (df_all['heure'] <= int(h_max))
+            stats["heure"] = len(df_all[h_mask])
+
+            # --- 3. CALCUL CUMULÉ (CROISEMENT TOTAL POUR LA CARTE ET LE BAS) ---
+            mask_global = h_mask.copy()
+            if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";")]))
+            if catv_filtre: mask_global &= (df_all['catv'] == int(catv_filtre))
+            if route_filtre:
+                mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
+                mask_global &= (df_all['catr'] == mapping_r.get(route_filtre))
+            if sexe_filtre: mask_global &= (df_all['sexe'] == int(sexe_filtre))
+
+            df_filtre = df_all[mask_global]
+            stats["cumul_total"] = len(df_filtre)
             stats["hommes_filtres"] = len(df_filtre[df_filtre['sexe'] == 1])
             stats["femmes_filtres"] = len(df_filtre[df_filtre['sexe'] == 2])
-            stats["cumul_total"] = len(df_filtre)
-            stats["heure"] = len(df_filtre) # Affiche le nbr d'accidents de la plage
 
     except Exception as e:
         print(f"Erreur : {e}")
@@ -201,6 +221,12 @@ HTML_PAGE = """
         <div class="sidebar-stat-item">
             <h4>Véhicule</h4>
             <span class="stat-label-active">{{ stats.l_veh }}</span>
+            <div class="sidebar-stat-value">{{ stats.vehicule }} accidents</div>
+        </div>
+        <div class="sidebar-stat-item">
+            <h4>Route</h4>
+            <span class="stat-label-active">{{ stats.l_route }}</span>
+            <div class="sidebar-stat-value">{{ stats.route }} accidents</div>
         </div>
     </div>
 </div>

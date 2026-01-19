@@ -157,7 +157,7 @@ HTML_PAGE = """
         .grav-2 { color: black; }   /* Mort */
         .grav-3 { color: green; }   /* Hospitalisé */
         .grav-4 { color: orange; }  /* Blessé léger */
-}
+
     </style>
     <script>
         function updateMaxMin() {

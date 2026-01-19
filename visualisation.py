@@ -86,6 +86,7 @@ if missing:
     raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
 
 # conversions
+
 for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
     df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
@@ -131,6 +132,7 @@ if route_txt:
         mask &= (df["catr"] == code)
 
 # --- CATV ---
+#convertit en str et ajoute un 0 devant si besoin
 cv = to_int(f.get("catv"))
 if cv is not None:
     mask &= (df["catv"] == cv)

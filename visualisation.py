@@ -102,10 +102,15 @@ mask = pd.Series(True, index=df.index)
 hmin = to_int(f.get("h_min"))
 hmax = to_int(f.get("h_max"))
 
-if hmin is not None:
-    mask &= (df["heure"] >= hmin)
-if hmax is not None:
-    mask &= (df["heure"] <= hmax)
+if hmin is not None and hmax is None:
+    # Cas Heure précise
+    mask &= (df["heure"] == hmin)
+else:
+    # Cas Plage horaire
+    if hmin is not None:
+        mask &= (df["heure"] >= hmin)
+    if hmax is not None:
+        mask &= (df["heure"] <= hmax)
 
 # --- GRAVITE---
 grav_txt = f.get("gravite", "").strip()

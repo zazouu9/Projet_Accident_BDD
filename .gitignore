@@ -1,7 +1,11 @@
- .DS_Store
+# macOS
+.DS_Store
+
+# Python
 __pycache__/
-resultat_filtre.txt
-results/*
-static/*
-results/accidents_carte_complet.csv
 venv/
+
+# Fichiers générés
+resultat_filtre.txt
+results/
+static/

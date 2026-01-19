@@ -1,0 +1,6 @@
+ .DS_Store
+        __pycache__/
+        resultat_filtre.txt
+        results/*
+        static/*
+        venv/

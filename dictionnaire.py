@@ -89,9 +89,15 @@ SEXE_TO_LABEL = {
 }
 
 # --- ZONE ---
-# Ajuste si ton référentiel diffère
 ZONE_TO_LABEL = {
     1: "Agglomération",
     2: "Hors agglomération",
     3: "Autre",
+}
+
+GRAV_TO_COLOR = {
+    1: "blue",     # Indemne
+    2: "black",    # Mort
+    3: "green",    # Hospitalisé
+    4: "orange",   # Blessés léger
 }

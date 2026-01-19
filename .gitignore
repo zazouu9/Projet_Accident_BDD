@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+venv/
+
+# Fichiers générés
+resultat_filtre.txt
+results/
+static/

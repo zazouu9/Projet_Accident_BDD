@@ -2,9 +2,26 @@ from flask import Flask, request, render_template_string, redirect, url_for
 import pandas as pd
 import os
 import subprocess
+import folium
 import sys
 
 app = Flask(__name__)
+
+def ensure_map_exists():
+    """
+    Si aucune carte filtrée n'existe, on génère une carte vierge
+    pour éviter un iframe cassé.
+    """
+    os.makedirs("static", exist_ok=True)
+
+    # si la carte existe déjà, rien à faire
+    if os.path.exists("static/carte_accidents.html"):
+        return
+
+    # carte vierge centrée France
+    m = folium.Map(location=[46.2276, 2.2137], zoom_start=6)
+    m.save("static/carte_accidents.html")
+
 
 def lire_filtres():
     """Lit les derniers filtres enregistrés."""
@@ -263,7 +280,8 @@ def index():
             print(f"Erreur génération carte: {e}")
 
         return redirect(url_for("index"))
-
+    
+    ensure_map_exists()
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 
 if __name__ == "__main__":

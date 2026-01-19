@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import folium
+from folium.plugins import MarkerCluster
 import html
 from dictionnaire import *
 
@@ -152,6 +153,12 @@ if not df_filtre.empty:
     center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
 
 m = folium.Map(location=center, zoom_start=6)
+cluster = MarkerCluster(
+    name="Accidents",
+    options={
+        "disableClusteringAtZoom": 14}  # met 17/18 selon ton max zoom
+     #   "maxClusterRadius": 35 
+).add_to(m)
 
 if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
@@ -168,7 +175,7 @@ else:
             fill=True,
             fill_opacity=0.7,
             popup=folium.Popup(popup_html, max_width=w),
-        ).add_to(m)
+        ).add_to(cluster)
 
 m.save(OUT_HTML)
 print(f"Succès : Carte générée avec {len(df_filtre)} points dans {OUT_HTML}")

@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template_string, redirect, url_for
+from folium.plugins import MarkerCluster
 import pandas as pd
 import os
 import subprocess

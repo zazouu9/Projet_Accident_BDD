@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Filtres accidents</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+}
+
+#container {
+    display: grid;
+    grid-template-columns: 320px 1fr 300px;
+    height: 100vh;
+}
+
+#filters {
+    background: #f4f4f4;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+#info {
+    background: #fafafa;
+    padding: 15px;
+}
+
+label {
+    display: block;
+    margin-top: 10px;
+}
+</style>
+
+<script>
+function genererTXT() {
+
+    const heure = document.getElementById("heure").value;
+    const gravite = Array.from(document.querySelectorAll("input[name='gravite']:checked"))
+                         .map(e => e.value);
+
+    const typeRoute = document.getElementById("route").value;
+    const catv = document.getElementById("catv").value;
+    const sexe = document.querySelector("input[name='sexe']:checked")?.value;
+
+    let contenu = "heure,gravite,type_route,categorie_vehicule,sexe";
+    contenu += `${heure},${gravite},${typeRoute},${catv},${sexe}`;
+
+    const blob = new Blob([contenu], { type: "text/plain;charset=utf-8" });
+    const lien = document.createElement("a");
+    lien.href = URL.createObjectURL(blob);
+    lien.download = "resultat_filtre.txt";
+    lien.click();
+}
+</script>
+
+</head>
+
+<body>
+
+<div id="container">
+
+<!-- FILTRES -->
+<div id="filters">
+<h3>Filtres</h3>
+
+<label>Heure :
+<input type="number" id="heure" min="0" max="23" value="0">
+</label>
+
+
+
+<hr>
+
+<b>Gravité</b>
+<label><input type="checkbox" name="gravite" value="1"> 1 – Indemne</label>
+<label><input type="checkbox" name="gravite" value="2"> 2 – Tué</label>
+<label><input type="checkbox" name="gravite" value="3"> 3 – Blessé hospitalisé</label>
+<label><input type="checkbox" name="gravite" value="4"> 4 – Blessé léger</label>
+
+<hr>
+
+<label>Type de route :
+<select id="route">
+<option value="Autoroute">Autoroute</option>
+<option value="Nationale">Nationale</option>
+<option value="Départementale">Départementale</option>
+<option value="Communale">Communale</option>
+</select>
+</label>
+
+<hr>
+
+<label>Catégorie véhicule (catv) :
+<select id="catv">
+<option value="07">07 – VL seul</option>
+<option value="10">10 – VU seul</option>
+<option value="13">13 – PL 3,5T–7,5T</option>
+<option value="14">14 – PL > 7,5T</option>
+<option value="30">30 – Scooter < 50 cm3</option>
+<option value="31">31 – Moto 50–125 cm3</option>
+<option value="33">33 – Moto > 125 cm3</option>
+<option value="80">80 – VAE</option>
+<option value="99">99 – Autre véhicule</option>
+</select>
+</label>
+
+<hr>
+
+<b>Sexe</b>
+<label><input type="radio" name="sexe" value="1"> Masculin</label>
+<label><input type="radio" name="sexe" value="2"> Féminin</label>
+
+<hr>
+
+<button onclick="genererTXT()">Filtrer</button>
+</div>
+
+<!-- CARTE -->
+<div>
+<iframe src="carte_accidents.html" width="100%" height="100%" style="border:none;"></iframe>
+</div>
+
+<!-- INFO -->
+<div id="info">
+<h3>Informations</h3>
+<p>Le fichier TXT contient les filtres sélectionnés.</p>
+</div>
+
+</div>
+
+</body>
+</html>
+

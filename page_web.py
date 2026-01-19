@@ -75,10 +75,17 @@ def obtenir_stats_completes():
             
             if h_min or h_max:
                 h_mask = pd.Series([True] * len(df_all))
-                if h_min: h_mask &= (df_all['heure'] >= int(h_min))
-                if h_max: h_mask &= (df_all['heure'] <= int(h_max))
+                # Cas 1 : Heure précise (seulement h_min est rempli)
+                if h_min and not h_max:
+                    h_mask &= (df_all['heure'] == int(h_min))
+                    lbl = f"À {h_min}h"
+                # Cas 2 : Plage horaire (les deux ou seulement h_max)
+                else:
+                    if h_min: h_mask &= (df_all['heure'] >= int(h_min))
+                    if h_max: h_mask &= (df_all['heure'] <= int(h_max))
+                    lbl = f"De {h_min or 0}h à {h_max or 23}h"
+                
                 val = len(df_all[h_mask])
-                lbl = f"De {h_min or 0}h à {h_max or 23}h"
                 blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": val})
 
             if grav_filtre:
@@ -104,6 +111,11 @@ def obtenir_stats_completes():
 
             # --- CALCUL CUMULÉ (POUR LE BAS) ---
             mask_global = pd.Series([True] * len(df_all))
+            if h_min and not h_max:
+                mask_global &= (df_all['heure'] == int(h_min))
+            else:
+                if h_min: mask_global &= (df_all['heure'] >= int(h_min))
+                if h_max: mask_global &= (df_all['heure'] <= int(h_max))
             if h_min: mask_global &= (df_all['heure'] >= int(h_min))
             if h_max: mask_global &= (df_all['heure'] <= int(h_max))
             if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";") if x]))
@@ -226,6 +238,7 @@ HTML_PAGE = """
     </div>
     
     <div class="sidebar-stats">
+        <label>Statistique Global:</label>
         {% for bloc in stats.blocs %}
         <div class="sidebar-stat-item">
             <h4>{{ bloc.titre }}</h4>
@@ -285,4 +298,4 @@ def index():
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

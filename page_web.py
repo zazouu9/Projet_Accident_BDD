@@ -47,29 +47,24 @@ def obtenir_stats_completes():
         if os.path.exists("results/accidents_carte_complet.csv"):
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
             
-            h_min = filtres.get("h_min")
-            h_max = filtres.get("h_max")
-            grav_filtre = filtres.get("gravite")
-            catv_filtre = filtres.get("catv")
-            route_filtre = filtres.get("route")
-            sexe_filtre = filtres.get("sexe")
+            h_min = filtres.get("h_min", "")
+            h_max = filtres.get("h_max", "")
+            grav_filtre = filtres.get("gravite", "")
+            catv_filtre = filtres.get("catv", "")
+            route_filtre = filtres.get("route", "")
+            sexe_filtre = filtres.get("sexe", "")
 
-            # --- CALCULS INDIVIDUELS POUR BLOCS GAUCHE (UNIQUEMENT SI SÉLECTIONNÉS) ---
-            
+            # --- CALCULS INDIVIDUELS POUR BLOCS GAUCHE ---
             if h_min or h_max:
                 h_mask = pd.Series([True] * len(df_all))
-                # Cas 1 : Heure précise (seulement h_min est rempli)
                 if h_min and not h_max:
                     h_mask &= (df_all['heure'] == int(h_min))
                     lbl = f"À {h_min}h"
-                # Cas 2 : Plage horaire (les deux ou seulement h_max)
                 else:
                     if h_min: h_mask &= (df_all['heure'] >= int(h_min))
                     if h_max: h_mask &= (df_all['heure'] <= int(h_max))
                     lbl = f"De {h_min or 0}h à {h_max or 23}h"
-                
-                val = len(df_all[h_mask])
-                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": val})
+                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": len(df_all[h_mask])})
 
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
@@ -92,15 +87,14 @@ def obtenir_stats_completes():
                 lbl = label_sexe.get(sexe_filtre)
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # --- CALCUL CUMULÉ (POUR LE BAS) ---
+            # --- CALCUL CUMULÉ (CROISEMENT TOTAL) ---
             mask_global = pd.Series([True] * len(df_all))
             if h_min and not h_max:
                 mask_global &= (df_all['heure'] == int(h_min))
             else:
                 if h_min: mask_global &= (df_all['heure'] >= int(h_min))
                 if h_max: mask_global &= (df_all['heure'] <= int(h_max))
-            if h_min: mask_global &= (df_all['heure'] >= int(h_min))
-            if h_max: mask_global &= (df_all['heure'] <= int(h_max))
+            
             if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";") if x]))
             if catv_filtre: mask_global &= (df_all['catv'] == int(catv_filtre))
             if route_filtre:
@@ -144,6 +138,20 @@ HTML_PAGE = """
         fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding: 10px; }
         select { width: 100%; padding: 4px; margin-top: 5px; }
     </style>
+    <script>
+        function updateMaxMin() {
+            const hMin = document.getElementsByName('h_min')[0];
+            const hMax = document.getElementsByName('h_max')[0];
+            
+            // On définit la valeur minimum du champ 'Fin' basée sur le champ 'Début'
+            hMax.min = hMin.value;
+            
+            // Si la valeur actuelle de Fin est plus petite que Début, on corrige
+            if (hMax.value !== "" && parseInt(hMax.value) < parseInt(hMin.value)) {
+                hMax.value = hMin.value;
+            }
+        }
+    </script>
 </head>
 <body>
 <div id="sidebar">
@@ -152,7 +160,7 @@ HTML_PAGE = """
         <form method="post">
             <label>Plage Horaire :</label>
             <div class="range-container">
-                <input type="number" name="h_min" min="0" max="23" placeholder="Début">
+                <input type="number" name="h_min" min="0" max="23" placeholder="Début" oninput="updateMaxMin()">
                 <span>à</span>
                 <input type="number" name="h_max" min="0" max="23" placeholder="Fin">
             </div>
@@ -221,7 +229,7 @@ HTML_PAGE = """
     </div>
     
     <div class="sidebar-stats">
-        <label>Statistique Global:</label>
+        <label>Statistiques Globales :</label>
         {% for bloc in stats.blocs %}
         <div class="sidebar-stat-item">
             <h4>{{ bloc.titre }}</h4>
@@ -248,7 +256,7 @@ HTML_PAGE = """
             </div>
         </div>
         <div class="stat-box-bottom">
-            <div style="font-size: 0.75em; opacity: 0.8;">TOTAL FILTRÉ</div>
+            <div style="font-size: 0.75em; opacity: 0.8;">TOTAL FILTRÉ (CROISEMENT)</div>
             <div class="total-value">{{ stats.cumul_total }}</div>
         </div>
     </div>
@@ -258,10 +266,15 @@ HTML_PAGE = """
 """
 
 @app.route("/", methods=["GET", "POST"])
-def index():
+def page_principale():
     if request.method == "POST":
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
+        
+        # --- Sécurité Python : si fin < debut, on ignore la fin pour faire une heure précise ---
+        if h_min != "" and h_max != "" and int(h_max) < int(h_min):
+            h_max = "" 
+
         g = ";".join(request.form.getlist("gravite"))
         r = request.form.get("route", "")
         v = request.form.get("catv", "")
@@ -275,7 +288,7 @@ def index():
         except Exception as e:
             print(f"Erreur génération carte: {e}")
 
-        return redirect(url_for("index"))
+        return redirect(url_for("page_principale"))
 
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 

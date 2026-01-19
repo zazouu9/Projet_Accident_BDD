@@ -27,18 +27,17 @@ def obtenir_stats_completes():
         "03": "Voiturette", "07": "VL seul", "10": "VU seul 1,5T-3,5T",
         "13": "PL seul 3,5T-7,5T", "14": "PL seul > 7,5T", "15": "PL > 3,5T + rem.",
         "16": "Tracteur seul", "17": "Tracteur + semi", "20": "Engin spécial",
-        "21": "Tracteur agricole", "30": "Scooter < 50cm3", "31": "Moto 50-125cm3",
-        "32": "Scooter 50-125cm3", "33": "Moto > 125cm3", "34": "Scooter > 125cm3",
+        "21": "Tracteur agricole", "30": "Scooter < 50 cm3", "31": "Moto 50-125 cm3",
+        "32": "Scooter 50-125 cm3", "33": "Moto > 125 cm3", "34": "Scooter > 125 cm3",
         "35": "Quad léger", "36": "Quad lourd", "37": "Autobus", "38": "Autocar",
-        "39": "Train", "40": "Tramway", "41": "3RM <= 50cm3", "42": "3RM 50-125cm3",
-        "43": "3RM > 125cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
+        "39": "Train", "40": "Tramway", "41": "3RM <= 50 cm3", "42": "3RM 50-125 cm3",
+        "43": "3RM > 125 cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
         "80": "VAE", "99": "Autre"
     }
 
+    blocs_actifs = []
     stats = {
-        "gravite": 0, "heure": 0, "sexe": 0, "route": 0, "vehicule": 0, 
-        "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
-        "l_grav": "Tous", "l_heure": "Toutes", "l_sexe": "Tous", "l_route": "Toutes", "l_veh": "Tous"
+        "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0, "blocs": blocs_actifs
     }
     
     if not filtres:
@@ -55,40 +54,42 @@ def obtenir_stats_completes():
             route_filtre = filtres.get("route")
             sexe_filtre = filtres.get("sexe")
 
-            # --- 1. CALCUL DES LABELS ---
-            if grav_filtre:
-                stats["l_grav"] = ", ".join([label_gravite.get(c, c) for c in grav_filtre.split(";") if c])
+            # --- CALCULS INDIVIDUELS POUR BLOCS GAUCHE (UNIQUEMENT SI SÉLECTIONNÉS) ---
+            
             if h_min or h_max:
-                stats["l_heure"] = f"De {h_min or 0}h à {h_max or 23}h"
-            if sexe_filtre: stats["l_sexe"] = label_sexe.get(sexe_filtre, "Tous")
-            if route_filtre: stats["l_route"] = route_filtre
-            if catv_filtre: stats["l_veh"] = label_vehicule.get(catv_filtre, "Tous")
+                h_mask = pd.Series([True] * len(df_all))
+                if h_min: h_mask &= (df_all['heure'] >= int(h_min))
+                if h_max: h_mask &= (df_all['heure'] <= int(h_max))
+                val = len(df_all[h_mask])
+                lbl = f"De {h_min or 0}h à {h_max or 23}h"
+                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": val})
 
-            # --- 2. CALCULS INDIVIDUELS (STATISTIQUES GÉNÉRALES À GAUCHE) ---
-            # On calcule le nombre total d'accidents pour CHAQUE critère indépendamment
-            
-            # Gravité (ex: Total des tués dans toute la base)
             if grav_filtre:
-                stats["gravite"] = len(df_all[df_all['grav'].isin([int(x) for x in grav_filtre.split(";")])])
-            
-            # Véhicule (ex: Total des accidents impliquant ce véhicule)
+                codes = [int(x) for x in grav_filtre.split(";") if x]
+                val = len(df_all[df_all['grav'].isin(codes)])
+                lbl = ", ".join([label_gravite.get(str(c)) for c in codes])
+                blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
+
             if catv_filtre:
-                stats["vehicule"] = len(df_all[df_all['catv'] == int(catv_filtre)])
-            
-            # Route (ex: Total sur Autoroute)
+                val = len(df_all[df_all['catv'] == int(catv_filtre)])
+                lbl = label_vehicule.get(catv_filtre, "Inconnu")
+                blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
+
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                stats["route"] = len(df_all[df_all['catr'] == mapping_r.get(route_filtre)])
+                val = len(df_all[df_all['catr'] == mapping_r.get(route_filtre)])
+                blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
 
-            # Heure (Plage horaire sur toute la base)
-            h_mask = pd.Series([True] * len(df_all))
-            if h_min: h_mask &= (df_all['heure'] >= int(h_min))
-            if h_max: h_mask &= (df_all['heure'] <= int(h_max))
-            stats["heure"] = len(df_all[h_mask])
+            if sexe_filtre:
+                val = len(df_all[df_all['sexe'] == int(sexe_filtre)])
+                lbl = label_sexe.get(sexe_filtre)
+                blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # --- 3. CALCUL CUMULÉ (CROISEMENT TOTAL POUR LA CARTE ET LE BAS) ---
-            mask_global = h_mask.copy()
-            if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";")]))
+            # --- CALCUL CUMULÉ (POUR LE BAS) ---
+            mask_global = pd.Series([True] * len(df_all))
+            if h_min: mask_global &= (df_all['heure'] >= int(h_min))
+            if h_max: mask_global &= (df_all['heure'] <= int(h_max))
+            if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";") if x]))
             if catv_filtre: mask_global &= (df_all['catv'] == int(catv_filtre))
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
@@ -182,8 +183,8 @@ HTML_PAGE = """
                 <option value="32">32 – Scooter 50-125 cm3</option>
                 <option value="33">33 – Moto > 125 cm3</option>
                 <option value="34">34 – Scooter > 125 cm3</option>
-                <option value="35">35 – Quad léger <= 50 cm3</option>
-                <option value="36">36 – Quad lourd > 50 cm3</option>
+                <option value="35">35 – Quad léger</option>
+                <option value="36">36 – Quad lourd</option>
                 <option value="37">37 – Autobus</option>
                 <option value="38">38 – Autocar</option>
                 <option value="39">39 – Train</option>
@@ -208,26 +209,13 @@ HTML_PAGE = """
     </div>
     
     <div class="sidebar-stats">
+        {% for bloc in stats.blocs %}
         <div class="sidebar-stat-item">
-            <h4>Heure / Plage</h4>
-            <span class="stat-label-active">{{ stats.l_heure }}</span>
-            <div class="sidebar-stat-value">{{ stats.heure }} accidents</div>
+            <h4>{{ bloc.titre }}</h4>
+            <span class="stat-label-active">{{ bloc.label }}</span>
+            <div class="sidebar-stat-value">{{ bloc.valeur }} accidents</div>
         </div>
-        <div class="sidebar-stat-item">
-            <h4>Gravité</h4>
-            <span class="stat-label-active">{{ stats.l_grav }}</span>
-            <div class="sidebar-stat-value">{{ stats.gravite }} accidents</div>
-        </div>
-        <div class="sidebar-stat-item">
-            <h4>Véhicule</h4>
-            <span class="stat-label-active">{{ stats.l_veh }}</span>
-            <div class="sidebar-stat-value">{{ stats.vehicule }} accidents</div>
-        </div>
-        <div class="sidebar-stat-item">
-            <h4>Route</h4>
-            <span class="stat-label-active">{{ stats.l_route }}</span>
-            <div class="sidebar-stat-value">{{ stats.route }} accidents</div>
-        </div>
+        {% endfor %}
     </div>
 </div>
 
@@ -271,11 +259,10 @@ def index():
 
         try:
             subprocess.run([sys.executable, "visualisation.py"], check=True)
-            print("visualisation")
         except Exception as e:
             print(f"Erreur génération carte: {e}")
 
-        #return redirect(url_for("index"))
+        return redirect(url_for("index"))
 
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 

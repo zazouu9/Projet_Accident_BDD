@@ -53,4 +53,4 @@ profil > settings > SSHkeys > ajouter une clé --> coller le contenue
 python -m venv venv
 source venv/bin/activate
 
-pip install pandas folium
+pip install pandas folium flask

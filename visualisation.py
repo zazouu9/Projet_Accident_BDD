@@ -156,8 +156,7 @@ m = folium.Map(location=center, zoom_start=6)
 cluster = MarkerCluster(
     name="Accidents",
     options={
-        "disableClusteringAtZoom": 14}  # met 17/18 selon ton max zoom
-     #   "maxClusterRadius": 35 
+        "disableClusteringAtZoom": 14}  # zoom a partir du quelle on annule l'agglomération, 0=dezoomer / 20=zoomer 
 ).add_to(m)
 
 if df_filtre.empty:

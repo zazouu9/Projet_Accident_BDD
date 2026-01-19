@@ -34,6 +34,12 @@ def to_int(x):
     except:
         return None
 
+def grav_to_color(grav):
+    try:
+        return GRAV_TO_COLOR.get(int(grav), "gray")
+    except:
+        return "gray"
+
 def popup_pre(row):
     heure = int(row["heure"])
     zone = int(row["zone"])
@@ -96,10 +102,15 @@ mask = pd.Series(True, index=df.index)
 hmin = to_int(f.get("h_min"))
 hmax = to_int(f.get("h_max"))
 
-if hmin is not None:
-    mask &= (df["heure"] >= hmin)
-if hmax is not None:
-    mask &= (df["heure"] <= hmax)
+if hmin is not None and hmax is None:
+    # Cas Heure précise
+    mask &= (df["heure"] == hmin)
+else:
+    # Cas Plage horaire
+    if hmin is not None:
+        mask &= (df["heure"] >= hmin)
+    if hmax is not None:
+        mask &= (df["heure"] <= hmax)
 
 # --- GRAVITE---
 grav_txt = f.get("gravite", "").strip()
@@ -148,11 +159,12 @@ else:
     for _, row in df_filtre.iterrows():
 
         popup_html, w = popup_pre(row)
+        color = grav_to_color(row["grav"])
 
         folium.CircleMarker(
             location=[row["lat"], row["long"]],
             radius=4,
-            color="red",
+            color=color,
             fill=True,
             fill_opacity=0.7,
             popup=folium.Popup(popup_html, max_width=w),

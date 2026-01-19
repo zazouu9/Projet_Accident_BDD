@@ -99,5 +99,5 @@ GRAV_TO_COLOR = {
     1: "blue",     # Indemne
     2: "black",    # Mort
     3: "green",    # Hospitalisé
-    4: "orange",   # Blessé léger
+    4: "orange",   # Blessés léger
 }

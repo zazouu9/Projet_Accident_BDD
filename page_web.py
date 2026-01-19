@@ -209,6 +209,7 @@ HTML_PAGE = """
     </div>
     
     <div class="sidebar-stats">
+        <label>Statistique Global:</label>
         {% for bloc in stats.blocs %}
         <div class="sidebar-stat-item">
             <h4>{{ bloc.titre }}</h4>

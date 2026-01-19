@@ -131,11 +131,34 @@ HTML_PAGE = """
         button { margin-top: 15px; padding: 10px; width: 100%; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
         fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding: 10px; }
         select { width: 100%; padding: 4px; margin-top: 5px; }
+        .page-title {
+            width: 100%;
+            text-align: center;
+            background: #2c3e50;
+            color: white;
+            padding: 15px 0;
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: 1px;
+        }
+        .grav {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .grav-1 { color: blue; }    /* Indemne */
+        .grav-2 { color: black; }   /* Mort */
+        .grav-3 { color: green; }   /* Hospitalisé */
+        .grav-4 { color: orange; }  /* Blessé léger */
+}
     </style>
 </head>
 <body>
+
 <div id="sidebar">
     <div class="filter-section">
+        <h1 class="page-title">Accident routier 2024</h1>
         <h3>Filtres</h3>
         <form method="post">
             <label>Plage Horaire :</label>
@@ -145,12 +168,22 @@ HTML_PAGE = """
                 <input type="number" name="h_max" min="0" max="23" placeholder="Fin">
             </div>
             
-            <fieldset><legend>Gravité</legend>
-                <label><input type="checkbox" name="gravite" value="1"> Indemne</label>
-                <label><input type="checkbox" name="gravite" value="2"> Tué</label>
-                <label><input type="checkbox" name="gravite" value="3"> Hospitalisé</label>
-                <label><input type="checkbox" name="gravite" value="4"> Léger</label>
+            <fieldset>
+                <legend>Gravité</legend>
+                <label class="grav grav-1">
+                    <input type="checkbox" name="gravite" value="1"> Indemne
+                </label>
+                <label class="grav grav-2">
+                    <input type="checkbox" name="gravite" value="2"> Tué
+                </label>
+                <label class="grav grav-3">
+                    <input type="checkbox" name="gravite" value="3"> Hospitalisé
+                </label>
+                <label class="grav grav-4">
+                    <input type="checkbox" name="gravite" value="4"> Léger
+                </label>
             </fieldset>
+
 
             <label>Route :
                 <select name="route">

@@ -4,6 +4,7 @@ import os
 import subprocess
 import folium
 import sys
+from dictionnaire import DEP_TO_NAME 
 # on initialisation de l'application Flask
 app = Flask(__name__)
 
@@ -61,12 +62,28 @@ def get_departements_options():
     )
     deps = [d for d in deps.unique().tolist() if d]
 
-    # Tri "humain" : num puis alpha (2A/2B/971…)
-    # Simple et robuste
-    deps_sorted = sorted(deps, key=lambda x: (len(x), x))
-    return deps_sorted
+    # Tri (met 2A/2B correctement, puis DOM)
+    def sort_key(d):
+        # DOM (971...) en dernier
+        if d.isdigit() and len(d) == 3:
+            return (3, int(d), d)
+        # Départements 01..95
+        if d.isdigit():
+            return (1, int(d), d)
+        # 2A/2B
+        return (2, 0, d)
 
+    deps_sorted = sorted(deps, key=sort_key)
 
+    options = []
+    for code in deps_sorted:
+        # On met 01..09 sur 2 chiffres (si ta base est en "1" au lieu de "01")
+        # (ça n'empêche pas de filtrer car on garde aussi le code original dans value)
+        name = DEP_TO_NAME.get(code.zfill(2), DEP_TO_NAME.get(code, ""))
+        label = f"{code} - {name}" if name else code
+        options.append((code, label))
+
+    return options
 
 def obtenir_stats_completes():
     # on récup les filtres
@@ -348,6 +365,7 @@ HTML_PAGE = """
                 {% endfor %}
             </select>
             </label>
+
 
 
             <button type="submit">FILTRER LES DONNÉES</button>

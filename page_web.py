@@ -1,5 +1,4 @@
 from flask import Flask, request, render_template_string, redirect, url_for
-from folium.plugins import MarkerCluster
 import pandas as pd
 import os
 import subprocess
@@ -8,6 +7,10 @@ import sys
 # on initialisation de l'application Flask
 app = Flask(__name__)
 
+
+# -------------------------
+# Petite sécurité : si pas de carte générée, on met une carte vide
+# -------------------------
 def ensure_map_exists():
     
     # si aucune carte filtrée n'existe, on génère une carte vierge
@@ -16,12 +19,13 @@ def ensure_map_exists():
     # si la carte existe déjà, rien à faire on recup le fichier
     if os.path.exists("static/carte_accidents.html"):
         return
-
-    # carte vierge centrée France
     m = folium.Map(location=[46.2276, 2.2137], zoom_start=6)
     m.save("static/carte_accidents.html")
 
 
+# -------------------------
+# Lire les filtres stockés dans resultat_filtre.txt
+# -------------------------
 def lire_filtres():
     #on lit les derniers filtres enregistrés
     filtres = {}
@@ -33,6 +37,39 @@ def lire_filtres():
                     filtres[cle] = valeur
     return filtres
 
+
+# -------------------------
+# ✅ Liste des départements possibles (pour remplir le <select>)
+# On lit le CSV carte et on récupère les valeurs uniques de la colonne dep.
+# -------------------------
+def get_departements_options():
+    csv_path = "results/accidents_carte_complet.csv"
+    if not os.path.exists(csv_path):
+        return []
+
+    df = pd.read_csv(csv_path, dtype=str)
+
+    if "dep" not in df.columns:
+        return []
+
+    deps = (
+        df["dep"]
+        .astype(str)
+        .str.strip()
+        .replace({"nan": ""})
+    )
+    deps = [d for d in deps.unique().tolist() if d]
+
+    # Tri "humain" : num puis alpha (2A/2B/971…)
+    # Simple et robuste
+    deps_sorted = sorted(deps, key=lambda x: (len(x), x))
+    return deps_sorted
+
+
+# -------------------------
+# Stats dans la sidebar + cumul en bas
+# (on applique les filtres, y compris le département)
+# -------------------------
 def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
@@ -55,7 +92,8 @@ def obtenir_stats_completes():
     blocs_actifs = []
     # structure par défaut des statistiques envoyées à la page HTML
     stats = {
-        "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0, "blocs": blocs_actifs,
+        "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
+        "blocs": blocs_actifs,
         "show_chart": False, "chart_labels": [], "chart_values": []
     }
     # si le fichier de filtre est vide, on renvoie les stats à zéro
@@ -74,6 +112,7 @@ def obtenir_stats_completes():
             catv_filtre = filtres.get("catv", "")
             route_filtre = filtres.get("route", "")
             sexe_filtre = filtres.get("sexe", "")
+            dep_filtre = filtres.get("dep", "").strip()  # ✅ nouveau
 
             #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
             # traitement du bloc "Heure" si une heure ou plage est saisie
@@ -94,45 +133,67 @@ def obtenir_stats_completes():
             # traitement du bloc "Gravité" si une ou plusieurs cochées
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
-                val = len(df_all[df_all['grav'].isin(codes)])
-                lbl = ", ".join([label_gravite.get(str(c)) for c in codes])
+                val = int(df_all["grav"].isin(codes).sum())
+                lbl = ", ".join([label_gravite.get(str(c), str(c)) for c in codes])
                 blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Véhicule"
             if catv_filtre:
-                val = len(df_all[df_all['catv'] == int(catv_filtre)])
+                val = int((df_all["catv"] == int(catv_filtre)).sum())
                 lbl = label_vehicule.get(catv_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Type de route"
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                val = len(df_all[df_all['catr'] == mapping_r.get(route_filtre)])
-                blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
+                code_r = mapping_r.get(route_filtre)
+                if code_r is not None:
+                    val = int((df_all["catr"] == code_r).sum())
+                    blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
 
             # Traitement du bloc "Sexe"
             if sexe_filtre:
-                val = len(df_all[df_all['sexe'] == int(sexe_filtre)])
-                lbl = label_sexe.get(sexe_filtre)
+                val = int((df_all["sexe"] == int(sexe_filtre)).sum())
+                lbl = label_sexe.get(sexe_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
+            # ✅ Nouveau bloc : département
+            if dep_filtre:
+                val = int((df_all["dep"] == dep_filtre).sum())
+                blocs_actifs.append({"titre": "Département", "label": dep_filtre, "valeur": val})
+
+            # --- CUMUL GLOBAL (croisement de tous les filtres) ---
             #### CALCUL CUMULÉ EN BAS A DROITE STAT ####
             # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
             # application successive de tous les filtres actifs pour le bandeau du bas et la carte
             if h_min != "" and h_max == "":
-                mask_global &= (df_all['heure'] == int(h_min))
+                mask_global &= (df_all["heure"] == int(h_min))
             else:
-                if h_min != "": mask_global &= (df_all['heure'] >= int(h_min))
-                if h_max != "": mask_global &= (df_all['heure'] <= int(h_max))
-            
-            if grav_filtre: mask_global &= (df_all['grav'].isin([int(x) for x in grav_filtre.split(";") if x]))
-            if catv_filtre: mask_global &= (df_all['catv'] == int(catv_filtre))
+                if h_min != "":
+                    mask_global &= (df_all["heure"] >= int(h_min))
+                if h_max != "":
+                    mask_global &= (df_all["heure"] <= int(h_max))
+
+            if grav_filtre:
+                mask_global &= df_all["grav"].isin([int(x) for x in grav_filtre.split(";") if x])
+
+            if catv_filtre:
+                mask_global &= (df_all["catv"] == int(catv_filtre))
+
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                mask_global &= (df_all['catr'] == mapping_r.get(route_filtre))
-            if sexe_filtre: mask_global &= (df_all['sexe'] == int(sexe_filtre))
-            # création du sous-ensemble de données filtrées
+                code_r = mapping_r.get(route_filtre)
+                if code_r is not None:
+                    mask_global &= (df_all["catr"] == code_r)
+
+            if sexe_filtre:
+                mask_global &= (df_all["sexe"] == int(sexe_filtre))
+
+            # filtre dep dans le cumul global
+            if dep_filtre and "dep" in df_all.columns:
+                mask_global &= (df_all["dep"] == dep_filtre)
+
             df_filtre = df_all[mask_global]
 
             # remplissage des statistiques pour le bandeau bleu/jaune en bas
@@ -156,6 +217,7 @@ def obtenir_stats_completes():
     except Exception as e:
         # En cas d'erreur (fichier manquant, erreur de calcul) en console
         print(f"Erreur : {e}")
+
     return stats
 
 ### CONFIGURATION DE LA PAGE HTML ###
@@ -205,6 +267,7 @@ HTML_PAGE = """
         button { margin-top: 15px; padding: 10px; width: 100%; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
         fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding: 10px; }
         select { width: 100%; padding: 4px; margin-top: 5px; }
+
         .page-title { width: 100%; text-align: center; background: #2c3e50; color: white; padding: 15px 0; margin: 0; font-size: 22px; letter-spacing: 1px; }
         
         /* Couleurs pour les labels de gravité */
@@ -226,12 +289,14 @@ HTML_PAGE = """
         }
     </script>
 </head>
+
 <body>
 
 <div id="sidebar">
     <div class="filter-section">
         <h1 class="page-title">Accident routier 2024</h1>
         <h3>Filtres</h3>
+
         <form method="post">
             <label>Plage Horaire :</label>
             <div class="range-container">
@@ -239,7 +304,7 @@ HTML_PAGE = """
                 <span>à</span>
                 <input type="number" name="h_max" min="0" max="23" placeholder="Fin">
             </div>
-            
+
             <fieldset><legend>Gravité</legend>
                 <label class="grav grav-1"><input type="checkbox" name="gravite" value="1"> Indemne</label>
                 <label class="grav grav-2"><input type="checkbox" name="gravite" value="2"> Tué</label>
@@ -273,11 +338,21 @@ HTML_PAGE = """
                 <label><input type="radio" name="sexe" value="1"> Masculin</label>
                 <label><input type="radio" name="sexe" value="2"> Féminin</label>
             </fieldset>
-            
+
+           
+            <label>Département :
+                <select name="dep">
+                    <option value="">-- Tous les départements --</option>
+                    {% for d in deps %}
+                        <option value="{{ d }}" {% if d == dep_selected %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
             <button type="submit">FILTRER LES DONNÉES</button>
         </form>
     </div>
-    
+
     <div class="sidebar-stats">
         <label>Statistiques Globales :</label>
         {% for bloc in stats.blocs %}
@@ -338,7 +413,7 @@ HTML_PAGE = """
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { 
+            plugins: {
                 legend: { display: false },
                 title: {
                     display: true,
@@ -349,13 +424,15 @@ HTML_PAGE = """
                 tooltip: { backgroundColor: '#2c3e50' }
             },
             scales: {
-                y: { 
-                    beginAtZero: true, 
+                y: {
+                    beginAtZero: true,
                     ticks: { font: { size: 10 } },
                     title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
+                    title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
                 },
-                x: { 
+                x: {
                     ticks: { font: { size: 10 } },
+                    title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                     title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                 }
             }
@@ -385,8 +462,17 @@ def page_principale():
         s = request.form.get("sexe", "")
         # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
-            f.write(f"h_min:{h_min}\nh_max:{h_max}\ngravite:{g}\nroute:{r}\ncatv:{v}\nsexe:{s}\n")
+            f.write(
+                f"h_min:{h_min}\n"
+                f"h_max:{h_max}\n"
+                f"gravite:{g}\n"
+                f"route:{r}\n"
+                f"catv:{v}\n"
+                f"sexe:{s}\n"
+                f"dep:{dep}\n"
+            )
 
+        # Génération carte filtrée
         try:
             # on lance le script externe qui génère la carte HTML basée sur les nouveaux filtres
             subprocess.run([sys.executable, "visualisation.py"], check=True)
@@ -396,7 +482,18 @@ def page_principale():
         return redirect(url_for("page_principale"))
     # Affichage de la page (GET)
     ensure_map_exists()
-    return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
+
+    # On prépare la liste des départements pour le select
+    deps = get_departements_options()
+    dep_selected = lire_filtres().get("dep", "").strip()
+
+    return render_template_string(
+        HTML_PAGE,
+        stats=obtenir_stats_completes(),
+        deps=deps,
+        dep_selected=dep_selected
+    )
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

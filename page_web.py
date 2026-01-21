@@ -5,17 +5,15 @@ import os
 import subprocess
 import folium
 import sys
-
+# on initialisation de l'application Flask
 app = Flask(__name__)
 
 def ensure_map_exists():
-    """
-    Si aucune carte filtrée n'existe, on génère une carte vierge
-    pour éviter un iframe cassé.
-    """
+    
+    # si aucune carte filtrée n'existe, on génère une carte vierge
     os.makedirs("static", exist_ok=True)
 
-    # si la carte existe déjà, rien à faire
+    # si la carte existe déjà, rien à faire on recup le fichier
     if os.path.exists("static/carte_accidents.html"):
         return
 
@@ -25,7 +23,7 @@ def ensure_map_exists():
 
 
 def lire_filtres():
-    """Lit les derniers filtres enregistrés."""
+    #on lit les derniers filtres enregistrés
     filtres = {}
     if os.path.exists("resultat_filtre.txt"):
         with open("resultat_filtre.txt", "r", encoding="utf-8") as f:
@@ -36,8 +34,9 @@ def lire_filtres():
     return filtres
 
 def obtenir_stats_completes():
+    # on récup les filtres
     filtres = lire_filtres()
-    
+    # dictionnaire pour traduire num en nom
     label_gravite = {"1": "Indemne", "2": "Tué", "3": "Hospit.", "4": "Léger"}
     label_sexe = {"1": "Masculin", "2": "Féminin"}
     label_vehicule = {
@@ -52,20 +51,23 @@ def obtenir_stats_completes():
         "43": "3RM > 125 cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
         "80": "VAE", "99": "Autre"
     }
-
+    # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
     blocs_actifs = []
+    # structure par défaut des statistiques envoyées à la page HTML
     stats = {
         "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0, "blocs": blocs_actifs,
         "show_chart": False, "chart_labels": [], "chart_values": []
     }
-    
+    # si le fichier de filtre est vide, on renvoie les stats à zéro
     if not filtres:
         return stats
 
     try:
+        # vérification de l'existence du fichier CSV généré par stat_1.py
         if os.path.exists("results/accidents_carte_complet.csv"):
+        # chargement des données complètes
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
-            
+            # extraction des valeurs des filtres depuis le dictionnaire
             h_min = filtres.get("h_min", "")
             h_max = filtres.get("h_max", "")
             grav_filtre = filtres.get("gravite", "")
@@ -73,41 +75,51 @@ def obtenir_stats_completes():
             route_filtre = filtres.get("route", "")
             sexe_filtre = filtres.get("sexe", "")
 
-            # --- CALCULS INDIVIDUELS ---
+            #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
+            # traitement du bloc "Heure" si une heure ou plage est saisie
             if h_min != "" or h_max != "":
                 h_mask = pd.Series([True] * len(df_all))
                 if h_min != "" and h_max == "":
+                    # cas d'une heure précise unique
                     h_mask &= (df_all['heure'] == int(h_min))
                     lbl = f"À {h_min}h"
                 else:
+                    # cas d'une plage horaire
                     if h_min != "": h_mask &= (df_all['heure'] >= int(h_min))
                     if h_max != "": h_mask &= (df_all['heure'] <= int(h_max))
                     lbl = f"De {h_min or 0}h à {h_max or 23}h"
+                # ajout du bloc à la liste si des données existent
                 blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": len(df_all[h_mask])})
 
+            # traitement du bloc "Gravité" si une ou plusieurs cochées
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
                 val = len(df_all[df_all['grav'].isin(codes)])
                 lbl = ", ".join([label_gravite.get(str(c)) for c in codes])
                 blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
 
+            # Traitement du bloc "Véhicule"
             if catv_filtre:
                 val = len(df_all[df_all['catv'] == int(catv_filtre)])
                 lbl = label_vehicule.get(catv_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
 
+            # Traitement du bloc "Type de route"
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
                 val = len(df_all[df_all['catr'] == mapping_r.get(route_filtre)])
                 blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
 
+            # Traitement du bloc "Sexe"
             if sexe_filtre:
                 val = len(df_all[df_all['sexe'] == int(sexe_filtre)])
                 lbl = label_sexe.get(sexe_filtre)
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # --- CALCUL CUMULÉ ---
+            #### CALCUL CUMULÉ EN BAS A DROITE STAT ####
+            # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
+            # application successive de tous les filtres actifs pour le bandeau du bas et la carte
             if h_min != "" and h_max == "":
                 mask_global &= (df_all['heure'] == int(h_min))
             else:
@@ -120,24 +132,33 @@ def obtenir_stats_completes():
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
                 mask_global &= (df_all['catr'] == mapping_r.get(route_filtre))
             if sexe_filtre: mask_global &= (df_all['sexe'] == int(sexe_filtre))
-
+            # création du sous-ensemble de données filtrées
             df_filtre = df_all[mask_global]
+
+            # remplissage des statistiques pour le bandeau bleu/jaune en bas
             stats["cumul_total"] = len(df_filtre)
             stats["hommes_filtres"] = len(df_filtre[df_filtre['sexe'] == 1])
             stats["femmes_filtres"] = len(df_filtre[df_filtre['sexe'] == 2])
 
-            # --- DONNÉES GRAPHIQUE ---
+            ####  DONNÉES GRAPHIQUE ####
+
+            # le graphique n'apparaît que si une plage horaire est sélectionnée
             if (h_min != "" or h_max != "") and not df_filtre.empty:
+                # groupement des données par heure pour compter les accidents
                 chart_group = df_filtre.groupby('heure').size().reset_index(name='count')
+                # tri chronologique des heures
                 chart_group = chart_group.sort_values('heure')
+                # préparation des étiquettes (X) et des valeurs (Y)
                 stats["chart_labels"] = [f"{int(h)}h" for h in chart_group['heure'].tolist()]
                 stats["chart_values"] = chart_group['count'].tolist()
                 stats["show_chart"] = True
 
     except Exception as e:
+        # En cas d'erreur (fichier manquant, erreur de calcul) en console
         print(f"Erreur : {e}")
     return stats
 
+### CONFIGURATION DE LA PAGE HTML ###
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -145,46 +166,56 @@ HTML_PAGE = """
     <meta charset="UTF-8">
     <title>Dashboard Accidents</title>
     <style>
+        /* Mise en page globale avec Flexbox */
         body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Barre latérale gauche (Filtres et Stats) */
         #sidebar { width: 340px; padding: 15px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        /* Section des formulaires */
         .filter-section { flex-shrink: 0; border-bottom: 2px solid #ddd; padding-bottom: 15px; margin-bottom: 15px; }
         
+        /* Style du conteneur de graphique */
         #chart-container { 
-            width: 100%;
-            height: 250px; 
-            margin-top: 20px;
-            padding: 10px 5px;
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #ddd;
+            width: 100%; height: 250px; margin-top: 20px; padding: 10px 5px; 
+            background: white; border-radius: 8px; border: 1px solid #ddd; 
             display: {% if stats.show_chart %}block{% else %}none{% endif %};
         }
 
+        /* Style des blocs de statistiques à gauche */
         .sidebar-stats { margin-top: 15px; }
         .sidebar-stat-item { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #ddd; }
         .sidebar-stat-item h4 { margin: 0; font-size: 0.75em; color: #666; text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 3px; }
         .stat-label-active { font-weight: bold; color: #007bff; font-size: 0.9em; display: block; margin-top: 2px; }
         .sidebar-stat-value { font-size: 1.1em; font-weight: bold; color: #28a745; margin-top: 5px; }
         
+        /* Zone centrale (Carte et Bandeau bas) */
         #main-content { flex-grow: 1; display: flex; flex-direction: column; }
         #map-container { flex-grow: 1; width: 100%; }
         
+        /* Style du bandeau de cumul en bas */
         #info-panel-cumul { height: 80px; padding: 5px 25px; background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; }
         .stat-box-bottom { text-align: center; }
         .total-value { color: #f1c40f; font-size: 1.8em; font-weight: bold; }
         .gender-blue { color: #3498db; font-size: 1.5em; font-weight: bold; }
         
+        /* Style des inputs du formulaire */
         .range-container { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         .range-container input { width: 70px; padding: 4px; }
         button { margin-top: 15px; padding: 10px; width: 100%; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
         fieldset { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding: 10px; }
         select { width: 100%; padding: 4px; margin-top: 5px; }
         .page-title { width: 100%; text-align: center; background: #2c3e50; color: white; padding: 15px 0; margin: 0; font-size: 22px; letter-spacing: 1px; }
+        
+        /* Couleurs pour les labels de gravité */
         .grav { display: block; margin-bottom: 6px; font-weight: 600; }
         .grav-1 { color: blue; } .grav-2 { color: black; } .grav-3 { color: green; } .grav-4 { color: orange; }
     </style>
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <script>
+        // Fonction pour empêcher de choisir une heure de fin < heure de début
         function updateMaxMin() {
             const hMin = document.getElementsByName('h_min')[0];
             const hMax = document.getElementsByName('h_max')[0];
@@ -232,6 +263,7 @@ HTML_PAGE = """
                 <option value="00">00 – Indéterminable</option>
                 <option value="01">01 – Bicyclette</option>
                 <option value="07">07 – VL seul</option>
+                <option value="10">10 – VU seul</option>
                 <option value="33">33 – Moto > 125 cm3</option>
                 <option value="99">99 – Autre véhicule</option>
             </select>
@@ -320,19 +352,11 @@ HTML_PAGE = """
                 y: { 
                     beginAtZero: true, 
                     ticks: { font: { size: 10 } },
-                    title: {
-                        display: true,
-                        text: 'Nombre accidents',
-                        font: { size: 11, weight: 'bold' }
-                    }
+                    title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
                 },
                 x: { 
                     ticks: { font: { size: 10 } },
-                    title: {
-                        display: true,
-                        text: 'Heure',
-                        font: { size: 11, weight: 'bold' }
-                    }
+                    title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                 }
             }
         }
@@ -343,31 +367,34 @@ HTML_PAGE = """
 </body>
 </html>
 """
-
+### GESTION DES ROUTES FLASK ###
 @app.route("/", methods=["GET", "POST"])
 def page_principale():
+    # Gestion de la soumission du formulaire (clic sur le bouton Filtrer)
     if request.method == "POST":
+        # recup des données du formulaire
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
-        
+        # si fin < debut, on ignore la fin pour faire une recherche d'heure précise
         if h_min != "" and h_max != "" and int(h_max) < int(h_min):
             h_max = h_min 
-
+        # Transformation de la liste de cases cochées pour la gravité en chaîne avec points-virgules
         g = ";".join(request.form.getlist("gravite"))
         r = request.form.get("route", "")
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
-
+        # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(f"h_min:{h_min}\nh_max:{h_max}\ngravite:{g}\nroute:{r}\ncatv:{v}\nsexe:{s}\n")
 
         try:
+            # on lance le script externe qui génère la carte HTML basée sur les nouveaux filtres
             subprocess.run([sys.executable, "visualisation.py"], check=True)
         except Exception as e:
             print(f"Erreur génération carte: {e}")
-
+        # Une fois le traitement fini, on redirige vers la page pour afficher les nouveaux résultats
         return redirect(url_for("page_principale"))
-    
+    # Affichage de la page (GET)
     ensure_map_exists()
     return render_template_string(HTML_PAGE, stats=obtenir_stats_completes())
 

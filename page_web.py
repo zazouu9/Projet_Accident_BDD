@@ -8,9 +8,7 @@ import sys
 app = Flask(__name__)
 
 
-# -------------------------
-# Petite sécurité : si pas de carte générée, on met une carte vide
-# -------------------------
+
 def ensure_map_exists():
     
     # si aucune carte filtrée n'existe, on génère une carte vierge
@@ -23,9 +21,9 @@ def ensure_map_exists():
     m.save("static/carte_accidents.html")
 
 
-# -------------------------
+
 # Lire les filtres stockés dans resultat_filtre.txt
-# -------------------------
+
 def lire_filtres():
     #on lit les derniers filtres enregistrés
     filtres = {}
@@ -38,10 +36,10 @@ def lire_filtres():
     return filtres
 
 
-# -------------------------
-# ✅ Liste des départements possibles (pour remplir le <select>)
+
+# Liste des départements possibles (pour remplir le <select>)
 # On lit le CSV carte et on récupère les valeurs uniques de la colonne dep.
-# -------------------------
+
 def get_departements_options():
     csv_path = "results/accidents_carte_complet.csv"
     if not os.path.exists(csv_path):
@@ -66,10 +64,7 @@ def get_departements_options():
     return deps_sorted
 
 
-# -------------------------
-# Stats dans la sidebar + cumul en bas
-# (on applique les filtres, y compris le département)
-# -------------------------
+
 def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
@@ -157,7 +152,7 @@ def obtenir_stats_completes():
                 lbl = label_sexe.get(sexe_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # ✅ Nouveau bloc : département
+            # bloc : département
             if dep_filtre:
                 val = int((df_all["dep"] == dep_filtre).sum())
                 blocs_actifs.append({"titre": "Département", "label": dep_filtre, "valeur": val})

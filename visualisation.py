@@ -11,7 +11,7 @@ OUT_HTML = "static/carte_accidents.html"
 
 
 def read_filters_txt(path: str) -> dict:
-    """lit le fichier resultat filtre clé:valeur (1 filtre par ligne)."""
+    """Lit resultat_filtre.txt : une ligne = cle:valeur."""
     filtres = {}
     if not os.path.exists(path):
         return filtres
@@ -24,6 +24,7 @@ def read_filters_txt(path: str) -> dict:
             filtres[k.strip()] = v.strip()
     return filtres
 
+
 def to_int(x):
     if x is None:
         return None
@@ -35,13 +36,18 @@ def to_int(x):
     except:
         return None
 
+
 def grav_to_color(grav):
     try:
         return GRAV_TO_COLOR.get(int(grav), "gray")
     except:
         return "gray"
 
+
 def popup_pre(row):
+    # Ajout dep dans le popup (plus clair pour l’utilisateur)
+    dep = str(row.get("dep", "")).strip()
+
     heure = int(row["heure"])
     zone = int(row["zone"])
     catr = int(row["catr"])
@@ -50,7 +56,8 @@ def popup_pre(row):
     catv = int(row["catv"])
 
     lines = [
-        f" Heure : {heure}h",
+        f"Département : {dep if dep else 'Inconnu'}",
+        f"Heure : {heure}h",
         f"Zone : {ZONE_TO_LABEL.get(zone, 'Inconnu')} ({zone})",
         f"Type de route : {CATR_TO_ROUTE.get(catr, 'Inconnu')} ({catr})",
         f"Gravité : {GRAV_TO_LABEL.get(grav, 'Inconnu')} ({grav})",
@@ -60,61 +67,54 @@ def popup_pre(row):
         f"Long : {row['long']}",
     ]
 
-    # FORCER les retours à la ligne (Windows + compat)
     txt = "\r\n".join(lines)
-
-    # <pre> = respecte les retours à la ligne à coup sûr
     popup_html = (
         "<pre style='margin:0; white-space:pre; font-family:inherit;'>"
         f"{html.escape(txt)}"
         "</pre>"
     )
-
-    # Largeur raisonnable (sinon ça devient ridicule)
     return popup_html, 600
 
 
-
-# --- CHARGEMENT CSV ---
+# CHARGEMENT CSV
 if not os.path.exists(CSV_PATH):
     raise FileNotFoundError(f"Fichier introuvable: {CSV_PATH}")
 
 df = pd.read_csv(CSV_PATH, dtype=str)
 
-required_cols = ["heure", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
+# Ajout dep dans les colonnes obligatoires
+required_cols = ["heure", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
     raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
 
-# conversions
-
+# conversions (on garde dep en string pour préserver 2A/2B/971 etc.)
 for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
     df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+
+df["dep"] = df["dep"].astype(str).str.strip()
 
 df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
 df["long"] = pd.to_numeric(df["long"], errors="coerce")
 df = df.dropna(subset=["lat", "long"]).copy()
 
-# --- LECTURE FILTRES ---
+# LECTURE FILTRES
 f = read_filters_txt(FILTRE_PATH)
-
 mask = pd.Series(True, index=df.index)
 
-# --- FILTRE HEURE MIN/MAX ---
+#FILTRE HEURE MIN/MAX 
 hmin = to_int(f.get("h_min"))
 hmax = to_int(f.get("h_max"))
 
 if hmin is not None and hmax is None:
-    # Cas Heure précise
     mask &= (df["heure"] == hmin)
 else:
-    # Cas Plage horaire
     if hmin is not None:
         mask &= (df["heure"] >= hmin)
     if hmax is not None:
         mask &= (df["heure"] <= hmax)
 
-# --- GRAVITE---
+# --- GRAVITE ---
 grav_txt = f.get("gravite", "").strip()
 if grav_txt:
     grav_list = []
@@ -125,23 +125,28 @@ if grav_txt:
     if grav_list:
         mask &= df["grav"].isin(grav_list)
 
-# --- ROUTE ---
+# ROUTE 
 route_txt = f.get("route", "").strip()
 if route_txt:
     code = ROUTE_TO_CATR.get(route_txt)
     if code is not None:
         mask &= (df["catr"] == code)
 
-# --- CATV ---
-#convertit en str et ajoute un 0 devant si besoin
+# CATV
 cv = to_int(f.get("catv"))
 if cv is not None:
     mask &= (df["catv"] == cv)
 
-# --- SEXE ---
+# SEXE
 sv = to_int(f.get("sexe"))
 if sv is not None:
     mask &= (df["sexe"] == sv)
+
+# DEPARTEMENT 
+dep_txt = f.get("dep", "").strip()
+if dep_txt:
+    # comparaison simple (dep est en string)
+    mask &= (df["dep"] == dep_txt)
 
 df_filtre = df[mask].copy()
 
@@ -149,23 +154,24 @@ print("Filtres lus :", f)
 print("Total lignes CSV :", len(df))
 print("Total lignes filtrées :", len(df_filtre))
 
-# --- CARTE ---
+# CARTE
+os.makedirs("static", exist_ok=True)
+
 center = [46.2276, 2.2137]
 if not df_filtre.empty:
     center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
 
 m = folium.Map(location=center, zoom_start=6)
+
 cluster = MarkerCluster(
     name="Accidents",
-    options={
-        "disableClusteringAtZoom": 14}  # zoom a partir du quelle on annule l'agglomération, 0=dezoomer / 20=zoomer 
+    options={"disableClusteringAtZoom": 14}
 ).add_to(m)
 
 if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
 else:
     for _, row in df_filtre.iterrows():
-
         popup_html, w = popup_pre(row)
         color = grav_to_color(row["grav"])
 

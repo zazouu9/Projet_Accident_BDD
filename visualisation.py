@@ -1,13 +1,15 @@
 import os
 import pandas as pd
 import folium
-from folium.plugins import MarkerCluster
+from folium.plugins import MarkerCluster, TimestampedGeoJson
 import html
 from dictionnaire import *
 
 CSV_PATH = "results/accidents_carte_complet.csv"
 FILTRE_PATH = "resultat_filtre.txt"
-OUT_HTML = "static/carte_accidents.html"
+
+OUT_CLUSTER = "static/carte_accidents_cluster.html"
+OUT_ANIME   = "static/carte_accidents_anime.html"
 
 
 def read_filters_txt(path: str) -> dict:
@@ -76,100 +78,108 @@ def popup_pre(row):
     return popup_html, 600
 
 
-# CHARGEMENT CSV
-if not os.path.exists(CSV_PATH):
-    raise FileNotFoundError(f"Fichier introuvable: {CSV_PATH}")
+def load_and_filter_df():
+    # CHARGEMENT CSV
+    if not os.path.exists(CSV_PATH):
+        raise FileNotFoundError(f"Fichier introuvable: {CSV_PATH}")
 
-df = pd.read_csv(CSV_PATH, dtype=str)
+    df = pd.read_csv(CSV_PATH, dtype=str)
 
-# Ajout dep dans les colonnes obligatoires
-required_cols = ["heure", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
-missing = [c for c in required_cols if c not in df.columns]
-if missing:
-    raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
+    # Ajout dep dans les colonnes obligatoires
+    required_cols = ["heure", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
 
-# conversions (on garde dep en string pour préserver 2A/2B/971 etc.)
-for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+    # conversions (on garde dep en string pour préserver 2A/2B/971 etc.)
+    for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
-df["dep"] = df["dep"].astype(str).str.strip()
+    df["dep"] = df["dep"].astype(str).str.strip()
 
-df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-df["long"] = pd.to_numeric(df["long"], errors="coerce")
-df = df.dropna(subset=["lat", "long"]).copy()
+    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    df["long"] = pd.to_numeric(df["long"], errors="coerce")
+    df = df.dropna(subset=["lat", "long"]).copy()
 
-# LECTURE FILTRES
-f = read_filters_txt(FILTRE_PATH)
-mask = pd.Series(True, index=df.index)
+    # LECTURE FILTRES
+    f = read_filters_txt(FILTRE_PATH)
+    mask = pd.Series(True, index=df.index)
 
-#FILTRE HEURE MIN/MAX 
-hmin = to_int(f.get("h_min"))
-hmax = to_int(f.get("h_max"))
+    # FILTRE HEURE MIN/MAX
+    hmin = to_int(f.get("h_min"))
+    hmax = to_int(f.get("h_max"))
 
-if hmin is not None and hmax is None:
-    mask &= (df["heure"] == hmin)
-else:
-    if hmin is not None:
-        mask &= (df["heure"] >= hmin)
-    if hmax is not None:
-        mask &= (df["heure"] <= hmax)
+    if hmin is not None and hmax is None:
+        mask &= (df["heure"] == hmin)
+    else:
+        if hmin is not None:
+            mask &= (df["heure"] >= hmin)
+        if hmax is not None:
+            mask &= (df["heure"] <= hmax)
 
-# --- GRAVITE ---
-grav_txt = f.get("gravite", "").strip()
-if grav_txt:
-    grav_list = []
-    for p in grav_txt.split(";"):
-        gi = to_int(p)
-        if gi is not None:
-            grav_list.append(gi)
-    if grav_list:
-        mask &= df["grav"].isin(grav_list)
+    # --- GRAVITE ---
+    grav_txt = f.get("gravite", "").strip()
+    if grav_txt:
+        grav_list = []
+        for p in grav_txt.split(";"):
+            gi = to_int(p)
+            if gi is not None:
+                grav_list.append(gi)
+        if grav_list:
+            mask &= df["grav"].isin(grav_list)
 
-# ROUTE 
-route_txt = f.get("route", "").strip()
-if route_txt:
-    code = ROUTE_TO_CATR.get(route_txt)
-    if code is not None:
-        mask &= (df["catr"] == code)
+    # ROUTE
+    route_txt = f.get("route", "").strip()
+    if route_txt:
+        code = ROUTE_TO_CATR.get(route_txt)
+        if code is not None:
+            mask &= (df["catr"] == code)
 
-# CATV
-cv = to_int(f.get("catv"))
-if cv is not None:
-    mask &= (df["catv"] == cv)
+    # CATV
+    cv = to_int(f.get("catv"))
+    if cv is not None:
+        mask &= (df["catv"] == cv)
 
-# SEXE
-sv = to_int(f.get("sexe"))
-if sv is not None:
-    mask &= (df["sexe"] == sv)
+    # SEXE
+    sv = to_int(f.get("sexe"))
+    if sv is not None:
+        mask &= (df["sexe"] == sv)
 
-# DEPARTEMENT 
-dep_txt = f.get("dep", "").strip()
-if dep_txt:
-    # comparaison simple (dep est en string)
-    mask &= (df["dep"] == dep_txt)
+    # DEPARTEMENT
+    dep_txt = f.get("dep", "").strip()
+    if dep_txt:
+        mask &= (df["dep"] == dep_txt)
 
-df_filtre = df[mask].copy()
+    return df[mask].copy(), f
+
+
+# =========================
+# MAIN
+# =========================
+os.makedirs("static", exist_ok=True)
+
+df_filtre, f = load_and_filter_df()
 
 print("Filtres lus :", f)
-print("Total lignes CSV :", len(df))
 print("Total lignes filtrées :", len(df_filtre))
-
-# CARTE
-os.makedirs("static", exist_ok=True)
 
 center = [46.2276, 2.2137]
 if not df_filtre.empty:
     center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
 
-m = folium.Map(location=center, zoom_start=6)
+
+# =========================
+# 1) CARTE CLUSTER (défaut)
+# =========================
+m_cluster = folium.Map(location=center, zoom_start=6)
 
 cluster = MarkerCluster(
     name="Accidents",
     options={"disableClusteringAtZoom": 14}
-).add_to(m)
+).add_to(m_cluster)
 
 if df_filtre.empty:
-    folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m)
+    folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m_cluster)
 else:
     for _, row in df_filtre.iterrows():
         popup_html, w = popup_pre(row)
@@ -184,5 +194,64 @@ else:
             popup=folium.Popup(popup_html, max_width=w),
         ).add_to(cluster)
 
-m.save(OUT_HTML)
-print(f"Succès : Carte générée avec {len(df_filtre)} points dans {OUT_HTML}")
+m_cluster.save(OUT_CLUSTER)
+
+
+# =========================
+# 2) CARTE ANIMÉE (plugin)
+# =========================
+m_anime = folium.Map(location=center, zoom_start=6)
+
+features = []
+
+# Date factice : animation par heure
+base_date = "2024-01-01"
+
+if not df_filtre.empty:
+    for _, row in df_filtre.iterrows():
+        popup_html, _ = popup_pre(row)
+        color = grav_to_color(row["grav"])
+        hr = int(row["heure"]) if pd.notna(row["heure"]) else 0
+
+        t = f"{base_date}T{hr:02d}:00:00"
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(row["long"]), float(row["lat"])],
+            },
+            "properties": {
+                "times": [t],
+                "popup": popup_html,
+                "icon": "circle",
+                "iconstyle": {
+                    "fillColor": color,
+                    "fillOpacity": 0.7,
+                    "stroke": True,
+                    "radius": 4,
+                    "color": color,
+                },
+            },
+        })
+
+if features:
+    TimestampedGeoJson(
+        data={"type": "FeatureCollection", "features": features},
+        period="PT1H",               # pas horaire
+        transition_time=250,
+        add_last_point=True,
+        auto_play=False,
+        loop=False,
+        loop_button=True,
+        time_slider_drag_update=True,
+        date_options="HH:mm",
+    ).add_to(m_anime)
+else:
+    folium.Marker(center, popup="Aucun accident trouvé pour ces filtres.").add_to(m_anime)
+
+m_anime.save(OUT_ANIME)
+
+print("Succès :")
+print(" -", OUT_CLUSTER)
+print(" -", OUT_ANIME)

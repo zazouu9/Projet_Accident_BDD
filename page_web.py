@@ -4,31 +4,42 @@ import os
 import subprocess
 import folium
 import sys
-from dictionnaire import DEP_TO_NAME 
-from dictionnaire import CATV_TO_LABEL
+
+# ✅ on importe maintenant les dictionnaires depuis dictionnaires.py
+from dictionnaire import (
+    DEP_TO_NAME,
+    CATV_TO_LABEL,
+    GRAV_TO_LABEL,
+    SEXE_TO_LABEL,
+    ROUTE_TO_CATR,
+    CATR_TO_ROUTE,
+)
 
 # on initialisation de l'application Flask
 app = Flask(__name__)
 
 
-
 def ensure_map_exists():
-    
     # si aucune carte filtrée n'existe, on génère une carte vierge
     os.makedirs("static", exist_ok=True)
 
-    # si la carte existe déjà, rien à faire on recup le fichier
-    if os.path.exists("static/carte_accidents.html"):
-        return
-    m = folium.Map(location=[46.2276, 2.2137], zoom_start=6)
-    m.save("static/carte_accidents.html")
+    # ✅ le nouveau visualisation.py génère 2 cartes
+    cluster_path = "static/carte_accidents_cluster.html"
+    anime_path = "static/carte_accidents_anime.html"
 
+    # si les cartes existent déjà, rien à faire on recup le fichier
+    if os.path.exists(cluster_path) and os.path.exists(anime_path):
+        return
+
+    # fallback : cartes vides si jamais
+    m = folium.Map(location=[46.2276, 2.2137], zoom_start=6)
+    m.save(cluster_path)
+    m.save(anime_path)
 
 
 # Lire les filtres stockés dans resultat_filtre.txt
-
 def lire_filtres():
-    #on lit les derniers filtres enregistrés
+    # on lit les derniers filtres enregistrés
     filtres = {}
     if os.path.exists("resultat_filtre.txt"):
         with open("resultat_filtre.txt", "r", encoding="utf-8") as f:
@@ -39,10 +50,8 @@ def lire_filtres():
     return filtres
 
 
-
 # Liste des départements possibles (pour remplir le <select>)
 # On lit le CSV carte et on récupère les valeurs uniques de la colonne dep.
-
 def get_departements_options():
     """
     ✅ Renvoie une liste de tuples (code_dep, label)
@@ -129,32 +138,24 @@ def get_vehicules_options():
 
     return options
 
+
 def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
-    # dictionnaire pour traduire num en nom
-    label_gravite = {"1": "Indemne", "2": "Tué", "3": "Hospit.", "4": "Léger"}
-    label_sexe = {"1": "Masculin", "2": "Féminin"}
-    label_vehicule = {
-        "00": "Indéterminable", "01": "Bicyclette", "02": "Cyclomoteur <50cm3",
-        "03": "Voiturette", "07": "VL seul", "10": "VU seul 1,5T-3,5T",
-        "13": "PL seul 3,5T-7,5T", "14": "PL seul > 7,5T", "15": "PL > 3,5T + rem.",
-        "16": "Tracteur seul", "17": "Tracteur + semi", "20": "Engin spécial",
-        "21": "Tracteur agricole", "30": "Scooter < 50 cm3", "31": "Moto 50-125 cm3",
-        "32": "Scooter 50-125 cm3", "33": "Moto > 125 cm3", "34": "Scooter > 125 cm3",
-        "35": "Quad léger", "36": "Quad lourd", "37": "Autobus", "38": "Autocar",
-        "39": "Train", "40": "Tramway", "41": "3RM <= 50 cm3", "42": "3RM 50-125 cm3",
-        "43": "3RM > 125 cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
-        "80": "VAE", "99": "Autre"
-    }
+
+    # ✅ on utilise tes dictionnaires au lieu des mappings en dur
+    # (GRAV_TO_LABEL, SEXE_TO_LABEL, CATV_TO_LABEL, ROUTE_TO_CATR / CATR_TO_ROUTE)
+
     # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
     blocs_actifs = []
+
     # structure par défaut des statistiques envoyées à la page HTML
     stats = {
         "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
         "blocs": blocs_actifs,
         "show_chart": False, "chart_labels": [], "chart_values": []
     }
+
     # si le fichier de filtre est vide, on renvoie les stats à zéro
     if not filtres:
         return stats
@@ -162,8 +163,9 @@ def obtenir_stats_completes():
     try:
         # vérification de l'existence du fichier CSV généré par stat_1.py
         if os.path.exists("results/accidents_carte_complet.csv"):
-        # chargement des données complètes
+            # chargement des données complètes
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
+
             # extraction des valeurs des filtres depuis le dictionnaire
             h_min = filtres.get("h_min", "")
             h_max = filtres.get("h_max", "")
@@ -174,6 +176,7 @@ def obtenir_stats_completes():
             dep_filtre = filtres.get("dep", "").strip()
 
             #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
+
             # traitement du bloc "Heure" si une heure ou plage est saisie
             if h_min != "" or h_max != "":
                 h_mask = pd.Series([True] * len(df_all))
@@ -187,44 +190,49 @@ def obtenir_stats_completes():
                     if h_max != "": h_mask &= (df_all['heure'] <= int(h_max))
                     lbl = f"De {h_min or 0}h à {h_max or 23}h"
                 # ajout du bloc à la liste si des données existent
-                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": len(df_all[h_mask])})
+                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": int(h_mask.sum())})
 
             # traitement du bloc "Gravité" si une ou plusieurs cochées
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
                 val = int(df_all["grav"].isin(codes).sum())
-                lbl = ", ".join([label_gravite.get(str(c), str(c)) for c in codes])
+                lbl = ", ".join([GRAV_TO_LABEL.get(c, str(c)) for c in codes])
                 blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Véhicule"
             if catv_filtre:
                 val = int((df_all["catv"] == int(catv_filtre)).sum())
-                lbl = label_vehicule.get(catv_filtre, "Inconnu")
+                lbl = CATV_TO_LABEL.get(int(catv_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Type de route"
             if route_filtre:
-                mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                code_r = mapping_r.get(route_filtre)
+                # route_filtre est un texte (Autoroute, Nationale, ...)
+                code_r = ROUTE_TO_CATR.get(route_filtre)
                 if code_r is not None:
                     val = int((df_all["catr"] == code_r).sum())
-                    blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
+                    lbl = route_filtre
+                    blocs_actifs.append({"titre": "Route", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Sexe"
             if sexe_filtre:
                 val = int((df_all["sexe"] == int(sexe_filtre)).sum())
-                lbl = label_sexe.get(sexe_filtre, "Inconnu")
+                lbl = SEXE_TO_LABEL.get(int(sexe_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
             # bloc : département
             if dep_filtre:
                 val = int((df_all["dep"] == dep_filtre).sum())
-                blocs_actifs.append({"titre": "Département", "label": dep_filtre, "valeur": val})
+                # affichage "code - nom" si connu
+                nom_dep = DEP_TO_NAME.get(dep_filtre.zfill(2), DEP_TO_NAME.get(dep_filtre, ""))
+                lbl = f"{dep_filtre} - {nom_dep}" if nom_dep else dep_filtre
+                blocs_actifs.append({"titre": "Département", "label": lbl, "valeur": val})
 
             # --- CUMUL GLOBAL (croisement de tous les filtres) ---
             #### CALCUL CUMULÉ EN BAS A DROITE STAT ####
             # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
+
             # application successive de tous les filtres actifs pour le bandeau du bas et la carte
             if h_min != "" and h_max == "":
                 mask_global &= (df_all["heure"] == int(h_min))
@@ -241,8 +249,7 @@ def obtenir_stats_completes():
                 mask_global &= (df_all["catv"] == int(catv_filtre))
 
             if route_filtre:
-                mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
-                code_r = mapping_r.get(route_filtre)
+                code_r = ROUTE_TO_CATR.get(route_filtre)
                 if code_r is not None:
                     mask_global &= (df_all["catr"] == code_r)
 
@@ -261,7 +268,6 @@ def obtenir_stats_completes():
             stats["femmes_filtres"] = len(df_filtre[df_filtre['sexe'] == 2])
 
             ####  DONNÉES GRAPHIQUE ####
-
             # le graphique n'apparaît que si une plage horaire est sélectionnée
             if (h_min != "" or h_max != "") and not df_filtre.empty:
                 # groupement des données par heure pour compter les accidents
@@ -278,6 +284,7 @@ def obtenir_stats_completes():
         print(f"Erreur : {e}")
 
     return stats
+
 
 ### CONFIGURATION DE LA PAGE HTML ###
 HTML_PAGE = """
@@ -312,7 +319,7 @@ HTML_PAGE = """
         
         /* Zone centrale (Carte et Bandeau bas) */
         #main-content { flex-grow: 1; display: flex; flex-direction: column; }
-        #map-container { flex-grow: 1; width: 100%; }
+        #map-container { flex-grow: 1; width: 100%; position: relative; }
         
         /* Style du bandeau de cumul en bas */
         #info-panel-cumul { height: 80px; padding: 5px 25px; background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; }
@@ -332,6 +339,32 @@ HTML_PAGE = """
         /* Couleurs pour les labels de gravité */
         .grav { display: block; margin-bottom: 6px; font-weight: 600; }
         .grav-1 { color: blue; } .grav-2 { color: black; } .grav-3 { color: green; } .grav-4 { color: orange; }
+
+        /* BOUTONS CARTE (Cluster / Animé) */
+        #map-switch {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 9999;
+            display: flex;
+            gap: 8px;
+        }
+        #map-switch button {
+            width: auto;
+            margin: 0;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid #d0d0d0;
+            background: white;
+            color: #2c3e50;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        #map-switch button.active {
+            background: #2c3e50;
+            color: white;
+            border-color: #2c3e50;
+        }
     </style>
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -371,26 +404,24 @@ HTML_PAGE = """
                 <label class="grav grav-4"><input type="checkbox" name="gravite" value="4"> Léger</label>
             </fieldset>
 
-            <label>Route :
+            <label>Route : </label>
                 <select name="route">
-                    <option value="">-- Toutes les routes --</option>
+                    <option value=""> Toutes les routes </option>
                     <option value="Autoroute">Autoroute</option>
                     <option value="Nationale">Nationale</option>
                     <option value="Départementale">Départementale</option>
                     <option value="Communale">Communale</option>
                 </select>
-            </label>
-
+            
             <label>Véhicule :</label>
             <select name="catv">
-                <option value="">-- Tous les véhicules --</option>
+                <option value=""> Tous les véhicules </option>
                 {% for code, label in vehicules %}
-                    <option value="{{ code }}" {% if code == catv_selected %}selected{% endif %}>
+                    <option value="{{ code }}">
                         {{ label }}
                     </option>
                 {% endfor %}
             </select>
-
 
             <fieldset><legend>Sexe</legend>
                 <label><input type="radio" name="sexe" value=""> Tous</label>
@@ -398,19 +429,16 @@ HTML_PAGE = """
                 <label><input type="radio" name="sexe" value="2"> Féminin</label>
             </fieldset>
 
-           
-            <label>Département :
+            <label>Département :</label>
             <select name="dep">
-                <option value="">-- Tous les départements --</option>
+                <option value=""> Tous les départements </option>
                 {% for code, label in deps %}
-                <option value="{{ code }}" {% if code == dep_selected %}selected{% endif %}>
+                <option value="{{ code }}">
                     {{ label }}
                 </option>
                 {% endfor %}
             </select>
-            </label>
-
-
+            
 
             <button type="submit">FILTRER LES DONNÉES</button>
         </form>
@@ -434,7 +462,17 @@ HTML_PAGE = """
 
 <div id="main-content">
     <div id="map-container">
-        <iframe src="{{ url_for('static', filename='carte_accidents.html') }}" width="100%" height="100%" style="border:none;"></iframe>
+
+        <!-- boutons au dessus de l'iframe -->
+        <div id="map-switch">
+            <button type="button" id="btnCluster" class="active">Clusters</button>
+            <button type="button" id="btnAnime">Animé</button>
+        </div>
+
+        <!-- iframe par défaut sur la carte cluster -->
+        <iframe id="mapFrame"
+                src="{{ url_for('static', filename='carte_accidents_cluster.html') }}"
+                width="100%" height="100%" style="border:none;"></iframe>
     </div>
 
     <div id="info-panel-cumul">
@@ -500,11 +538,37 @@ HTML_PAGE = """
         }
     });
     {% endif %}
+
+    // bascule iframe cluster / animé
+    // - on change juste l'URL du contenu embarqué dans l'iframe via src :contentReference[oaicite:3]{index=3}
+
+    const frame = document.getElementById("mapFrame");
+    const btnC = document.getElementById("btnCluster");
+    const btnA = document.getElementById("btnAnime");
+
+    function setActive(which){
+        btnC.classList.remove("active");
+        btnA.classList.remove("active");
+        if(which === "cluster") btnC.classList.add("active");
+        if(which === "anime") btnA.classList.add("active");
+    }
+
+    btnC.addEventListener("click", () => {
+        frame.src = "{{ url_for('static', filename='carte_accidents_cluster.html') }}";
+        setActive("cluster");
+    });
+
+    btnA.addEventListener("click", () => {
+        frame.src = "{{ url_for('static', filename='carte_accidents_anime.html') }}";
+        setActive("anime");
+    });
 </script>
 
 </body>
 </html>
 """
+
+
 ### GESTION DES ROUTES FLASK ###
 @app.route("/", methods=["GET", "POST"])
 def page_principale():
@@ -513,15 +577,18 @@ def page_principale():
         # recup des données du formulaire
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
+
         # si fin < debut, on ignore la fin pour faire une recherche d'heure précise
         if h_min != "" and h_max != "" and int(h_max) < int(h_min):
-            h_max = h_min 
+            h_max = h_min
+
         # Transformation de la liste de cases cochées pour la gravité en chaîne avec points-virgules
         g = ";".join(request.form.getlist("gravite"))
         r = request.form.get("route", "")
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
-        dep = request.form.get("dep", "") 
+        dep = request.form.get("dep", "")
+
         # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(
@@ -540,23 +607,26 @@ def page_principale():
             subprocess.run([sys.executable, "visualisation.py"], check=True)
         except Exception as e:
             print(f"Erreur génération carte: {e}")
+
         # Une fois le traitement fini, on redirige vers la page pour afficher les nouveaux résultats
         return redirect(url_for("page_principale"))
+
     # Affichage de la page (GET)
     ensure_map_exists()
 
     # On prépare la liste des départements pour le select
     deps = get_departements_options()
-    dep_selected = lire_filtres().get("dep", "").strip()
+    #dep_selected = lire_filtres().get("dep", "").strip()
     vehicules = get_vehicules_options()
-    catv_selected = lire_filtres().get("catv", "").strip()
+    #catv_selected = lire_filtres().get("catv", "").strip()
+
     return render_template_string(
         HTML_PAGE,
         stats=obtenir_stats_completes(),
         deps=deps,
-        dep_selected=dep_selected,
-        vehicules=vehicules,         
-        catv_selected=catv_selected 
+        #dep_selected=dep_selected,
+        vehicules=vehicules,
+        #catv_selected=catv_selected
     )
 
 

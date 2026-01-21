@@ -5,6 +5,8 @@ import subprocess
 import folium
 import sys
 from dictionnaire import DEP_TO_NAME 
+from dictionnaire import CATV_TO_LABEL
+
 # on initialisation de l'application Flask
 app = Flask(__name__)
 
@@ -43,7 +45,7 @@ def lire_filtres():
 
 def get_departements_options():
     """
-    Renvoie une liste de tuples (code_dep, label_affiché)
+    ✅ Renvoie une liste de tuples (code_dep, label)
     ex: ("85", "85 - Vendée")
     """
     csv_path = "results/accidents_carte_complet.csv"
@@ -62,26 +64,68 @@ def get_departements_options():
     )
     deps = [d for d in deps.unique().tolist() if d]
 
-    # Tri (met 2A/2B correctement, puis DOM)
-    def sort_key(d):
-        # DOM (971...) en dernier
+    # Tri : num (01..95), puis 2A/2B, puis DOM (971...)
+    def dep_sort_key(d):
         if d.isdigit() and len(d) == 3:
-            return (3, int(d), d)
-        # Départements 01..95
+            return (3, int(d), d)   # DOM
         if d.isdigit():
-            return (1, int(d), d)
-        # 2A/2B
-        return (2, 0, d)
+            return (1, int(d), d)   # 01..95
+        return (2, 0, d)            # 2A/2B
 
-    deps_sorted = sorted(deps, key=sort_key)
+    deps_sorted = sorted(deps, key=dep_sort_key)
 
     options = []
     for code in deps_sorted:
-        # On met 01..09 sur 2 chiffres (si ta base est en "1" au lieu de "01")
-        # (ça n'empêche pas de filtrer car on garde aussi le code original dans value)
         name = DEP_TO_NAME.get(code.zfill(2), DEP_TO_NAME.get(code, ""))
         label = f"{code} - {name}" if name else code
         options.append((code, label))
+
+    return options
+
+
+def get_vehicules_options():
+    """
+    Liste des véhicules pour le <select>.
+    - On lit les codes catv présents dans le CSV carte
+    - On les affiche sous la forme : "10 - VU seul ..."
+    """
+    csv_path = "results/accidents_carte_complet.csv"
+    if not os.path.exists(csv_path):
+        return []
+
+    df = pd.read_csv(csv_path, dtype=str)
+    if "catv" not in df.columns:
+        return []
+
+    # On récupère les codes catv existants
+    codes = (
+        df["catv"]
+        .astype(str)
+        .str.strip()
+        .replace({"nan": ""})
+    )
+    codes = [c for c in codes.unique().tolist() if c != ""]
+
+    # On essaie de trier numériquement
+    def sort_key(x):
+        try:
+            return int(x)
+        except:
+            return 99999
+
+    codes_sorted = sorted(codes, key=sort_key)
+
+    options = []
+    for c in codes_sorted:
+        # CATV_TO_LABEL a des clés en int, donc on convertit
+        try:
+            ci = int(c)
+            nom = CATV_TO_LABEL.get(ci, "Inconnu")
+        except:
+            nom = "Inconnu"
+
+        label = f"{c} - {nom}"
+        options.append((c, label))
 
     return options
 
@@ -127,7 +171,7 @@ def obtenir_stats_completes():
             catv_filtre = filtres.get("catv", "")
             route_filtre = filtres.get("route", "")
             sexe_filtre = filtres.get("sexe", "")
-            dep_filtre = filtres.get("dep", "").strip()  # ✅ nouveau
+            dep_filtre = filtres.get("dep", "").strip()
 
             #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
             # traitement du bloc "Heure" si une heure ou plage est saisie
@@ -340,13 +384,13 @@ HTML_PAGE = """
             <label>Véhicule :</label>
             <select name="catv">
                 <option value="">-- Tous les véhicules --</option>
-                <option value="00">00 – Indéterminable</option>
-                <option value="01">01 – Bicyclette</option>
-                <option value="07">07 – VL seul</option>
-                <option value="10">10 – VU seul</option>
-                <option value="33">33 – Moto > 125 cm3</option>
-                <option value="99">99 – Autre véhicule</option>
+                {% for code, label in vehicules %}
+                    <option value="{{ code }}" {% if code == catv_selected %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                {% endfor %}
             </select>
+
 
             <fieldset><legend>Sexe</legend>
                 <label><input type="radio" name="sexe" value=""> Tous</label>
@@ -447,11 +491,9 @@ HTML_PAGE = """
                     beginAtZero: true,
                     ticks: { font: { size: 10 } },
                     title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
-                    title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
                 },
                 x: {
                     ticks: { font: { size: 10 } },
-                    title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                     title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                 }
             }
@@ -479,6 +521,7 @@ def page_principale():
         r = request.form.get("route", "")
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
+        dep = request.form.get("dep", "") 
         # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(
@@ -505,12 +548,15 @@ def page_principale():
     # On prépare la liste des départements pour le select
     deps = get_departements_options()
     dep_selected = lire_filtres().get("dep", "").strip()
-
+    vehicules = get_vehicules_options()
+    catv_selected = lire_filtres().get("catv", "").strip()
     return render_template_string(
         HTML_PAGE,
         stats=obtenir_stats_completes(),
         deps=deps,
-        dep_selected=dep_selected
+        dep_selected=dep_selected,
+        vehicules=vehicules,         
+        catv_selected=catv_selected 
     )
 
 

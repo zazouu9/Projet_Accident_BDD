@@ -4,27 +4,28 @@ import os
 import subprocess
 import folium
 import sys
-from dictionnaire import DEP_TO_NAME 
-
-
+# on initialisation de l'application Flask
 app = Flask(__name__)
 
 
-# -------------------------
-# Petite sécurité : si pas de carte générée, on met une carte vide
-# -------------------------
+
 def ensure_map_exists():
+    
+    # si aucune carte filtrée n'existe, on génère une carte vierge
     os.makedirs("static", exist_ok=True)
+
+    # si la carte existe déjà, rien à faire on recup le fichier
     if os.path.exists("static/carte_accidents.html"):
         return
     m = folium.Map(location=[46.2276, 2.2137], zoom_start=6)
     m.save("static/carte_accidents.html")
 
 
-# -------------------------
+
 # Lire les filtres stockés dans resultat_filtre.txt
-# -------------------------
+
 def lire_filtres():
+    #on lit les derniers filtres enregistrés
     filtres = {}
     if os.path.exists("resultat_filtre.txt"):
         with open("resultat_filtre.txt", "r", encoding="utf-8") as f:
@@ -35,7 +36,9 @@ def lire_filtres():
     return filtres
 
 
-from dictionnaire import DEP_TO_NAME  # ✅ ajout (en haut de page_web.py)
+
+# Liste des départements possibles (pour remplir le <select>)
+# On lit le CSV carte et on récupère les valeurs uniques de la colonne dep.
 
 def get_departements_options():
     """
@@ -58,35 +61,17 @@ def get_departements_options():
     )
     deps = [d for d in deps.unique().tolist() if d]
 
-    # Tri (met 2A/2B correctement, puis DOM)
-    def sort_key(d):
-        # DOM (971...) en dernier
-        if d.isdigit() and len(d) == 3:
-            return (3, int(d), d)
-        # Départements 01..95
-        if d.isdigit():
-            return (1, int(d), d)
-        # 2A/2B
-        return (2, 0, d)
+    # Tri "humain" : num puis alpha (2A/2B/971…)
+    # Simple et robuste
+    deps_sorted = sorted(deps, key=lambda x: (len(x), x))
+    return deps_sorted
 
-    deps_sorted = sorted(deps, key=sort_key)
 
-    options = []
-    for code in deps_sorted:
-        # On met 01..09 sur 2 chiffres (si ta base est en "1" au lieu de "01")
-        # (ça n'empêche pas de filtrer car on garde aussi le code original dans value)
-        name = DEP_TO_NAME.get(code.zfill(2), DEP_TO_NAME.get(code, ""))
-        label = f"{code} - {name}" if name else code
-        options.append((code, label))
 
-    return options
-# -------------------------
-# Stats dans la sidebar + cumul en bas
-# (on applique les filtres, y compris le département)
-# -------------------------
 def obtenir_stats_completes():
+    # on récup les filtres
     filtres = lire_filtres()
-
+    # dictionnaire pour traduire num en nom
     label_gravite = {"1": "Indemne", "2": "Tué", "3": "Hospit.", "4": "Léger"}
     label_sexe = {"1": "Masculin", "2": "Féminin"}
     label_vehicule = {
@@ -101,30 +86,24 @@ def obtenir_stats_completes():
         "43": "3RM > 125 cm3", "50": "EDP à moteur", "60": "EDP sans moteur",
         "80": "VAE", "99": "Autre"
     }
-
+    # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
     blocs_actifs = []
+    # structure par défaut des statistiques envoyées à la page HTML
     stats = {
         "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
         "blocs": blocs_actifs,
         "show_chart": False, "chart_labels": [], "chart_values": []
     }
-
+    # si le fichier de filtre est vide, on renvoie les stats à zéro
     if not filtres:
         return stats
 
     try:
-        csv_path = "results/accidents_carte_complet.csv"
-        if os.path.exists(csv_path):
-            df_all = pd.read_csv(csv_path, dtype=str)
-
-            # conversions (dep reste en string)
-            for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
-                if c in df_all.columns:
-                    df_all[c] = pd.to_numeric(df_all[c], errors="coerce")
-
-            if "dep" in df_all.columns:
-                df_all["dep"] = df_all["dep"].astype(str).str.strip()
-
+        # vérification de l'existence du fichier CSV généré par stat_1.py
+        if os.path.exists("results/accidents_carte_complet.csv"):
+        # chargement des données complètes
+            df_all = pd.read_csv("results/accidents_carte_complet.csv")
+            # extraction des valeurs des filtres depuis le dictionnaire
             h_min = filtres.get("h_min", "")
             h_max = filtres.get("h_max", "")
             grav_filtre = filtres.get("gravite", "")
@@ -133,31 +112,36 @@ def obtenir_stats_completes():
             sexe_filtre = filtres.get("sexe", "")
             dep_filtre = filtres.get("dep", "").strip()  # ✅ nouveau
 
-            # --- BLOCS INDIVIDUELS (si sélectionnés) ---
+            #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
+            # traitement du bloc "Heure" si une heure ou plage est saisie
             if h_min != "" or h_max != "":
                 h_mask = pd.Series([True] * len(df_all))
                 if h_min != "" and h_max == "":
-                    h_mask &= (df_all["heure"] == int(h_min))
+                    # cas d'une heure précise unique
+                    h_mask &= (df_all['heure'] == int(h_min))
                     lbl = f"À {h_min}h"
                 else:
-                    if h_min != "":
-                        h_mask &= (df_all["heure"] >= int(h_min))
-                    if h_max != "":
-                        h_mask &= (df_all["heure"] <= int(h_max))
+                    # cas d'une plage horaire
+                    if h_min != "": h_mask &= (df_all['heure'] >= int(h_min))
+                    if h_max != "": h_mask &= (df_all['heure'] <= int(h_max))
                     lbl = f"De {h_min or 0}h à {h_max or 23}h"
-                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": int(h_mask.sum())})
+                # ajout du bloc à la liste si des données existent
+                blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": len(df_all[h_mask])})
 
+            # traitement du bloc "Gravité" si une ou plusieurs cochées
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
                 val = int(df_all["grav"].isin(codes).sum())
                 lbl = ", ".join([label_gravite.get(str(c), str(c)) for c in codes])
                 blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
 
+            # Traitement du bloc "Véhicule"
             if catv_filtre:
                 val = int((df_all["catv"] == int(catv_filtre)).sum())
                 lbl = label_vehicule.get(catv_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
 
+            # Traitement du bloc "Type de route"
             if route_filtre:
                 mapping_r = {"Autoroute": 1, "Nationale": 2, "Départementale": 3, "Communale": 4}
                 code_r = mapping_r.get(route_filtre)
@@ -165,19 +149,22 @@ def obtenir_stats_completes():
                     val = int((df_all["catr"] == code_r).sum())
                     blocs_actifs.append({"titre": "Route", "label": route_filtre, "valeur": val})
 
+            # Traitement du bloc "Sexe"
             if sexe_filtre:
                 val = int((df_all["sexe"] == int(sexe_filtre)).sum())
                 lbl = label_sexe.get(sexe_filtre, "Inconnu")
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # ✅ Nouveau bloc : département
+            # bloc : département
             if dep_filtre:
                 val = int((df_all["dep"] == dep_filtre).sum())
                 blocs_actifs.append({"titre": "Département", "label": dep_filtre, "valeur": val})
 
             # --- CUMUL GLOBAL (croisement de tous les filtres) ---
+            #### CALCUL CUMULÉ EN BAS A DROITE STAT ####
+            # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
-
+            # application successive de tous les filtres actifs pour le bandeau du bas et la carte
             if h_min != "" and h_max == "":
                 mask_global &= (df_all["heure"] == int(h_min))
             else:
@@ -206,25 +193,32 @@ def obtenir_stats_completes():
                 mask_global &= (df_all["dep"] == dep_filtre)
 
             df_filtre = df_all[mask_global]
-            stats["cumul_total"] = int(len(df_filtre))
-            stats["hommes_filtres"] = int((df_filtre["sexe"] == 1).sum())
-            stats["femmes_filtres"] = int((df_filtre["sexe"] == 2).sum())
 
-            # --- DONNÉES GRAPHIQUE (heure) ---
-            if not df_filtre.empty:
-                chart_group = df_filtre.groupby("heure").size().reset_index(name="count").sort_values("heure")
-                stats["chart_labels"] = [f"{int(h)}h" for h in chart_group["heure"].tolist()]
-                stats["chart_values"] = chart_group["count"].tolist()
+            # remplissage des statistiques pour le bandeau bleu/jaune en bas
+            stats["cumul_total"] = len(df_filtre)
+            stats["hommes_filtres"] = len(df_filtre[df_filtre['sexe'] == 1])
+            stats["femmes_filtres"] = len(df_filtre[df_filtre['sexe'] == 2])
+
+            ####  DONNÉES GRAPHIQUE ####
+
+            # le graphique n'apparaît que si une plage horaire est sélectionnée
+            if (h_min != "" or h_max != "") and not df_filtre.empty:
+                # groupement des données par heure pour compter les accidents
+                chart_group = df_filtre.groupby('heure').size().reset_index(name='count')
+                # tri chronologique des heures
+                chart_group = chart_group.sort_values('heure')
+                # préparation des étiquettes (X) et des valeurs (Y)
+                stats["chart_labels"] = [f"{int(h)}h" for h in chart_group['heure'].tolist()]
+                stats["chart_values"] = chart_group['count'].tolist()
                 stats["show_chart"] = True
 
     except Exception as e:
+        # En cas d'erreur (fichier manquant, erreur de calcul) en console
         print(f"Erreur : {e}")
 
     return stats
 
-
-
-# HTML (ajout du select Département)
+### CONFIGURATION DE LA PAGE HTML ###
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -232,35 +226,40 @@ HTML_PAGE = """
     <meta charset="UTF-8">
     <title>Dashboard Accidents</title>
     <style>
+        /* Mise en page globale avec Flexbox */
         body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Barre latérale gauche (Filtres et Stats) */
         #sidebar { width: 340px; padding: 15px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        /* Section des formulaires */
         .filter-section { flex-shrink: 0; border-bottom: 2px solid #ddd; padding-bottom: 15px; margin-bottom: 15px; }
-
-        #chart-container {
-            width: 100%;
-            height: 250px;
-            margin-top: 20px;
-            padding: 10px 5px;
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #ddd;
+        
+        /* Style du conteneur de graphique */
+        #chart-container { 
+            width: 100%; height: 250px; margin-top: 20px; padding: 10px 5px; 
+            background: white; border-radius: 8px; border: 1px solid #ddd; 
             display: {% if stats.show_chart %}block{% else %}none{% endif %};
         }
 
+        /* Style des blocs de statistiques à gauche */
         .sidebar-stats { margin-top: 15px; }
         .sidebar-stat-item { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #ddd; }
         .sidebar-stat-item h4 { margin: 0; font-size: 0.75em; color: #666; text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 3px; }
         .stat-label-active { font-weight: bold; color: #007bff; font-size: 0.9em; display: block; margin-top: 2px; }
         .sidebar-stat-value { font-size: 1.1em; font-weight: bold; color: #28a745; margin-top: 5px; }
-
+        
+        /* Zone centrale (Carte et Bandeau bas) */
         #main-content { flex-grow: 1; display: flex; flex-direction: column; }
         #map-container { flex-grow: 1; width: 100%; }
-
+        
+        /* Style du bandeau de cumul en bas */
         #info-panel-cumul { height: 80px; padding: 5px 25px; background: #2c3e50; color: white; display: flex; align-items: center; justify-content: space-between; }
         .stat-box-bottom { text-align: center; }
         .total-value { color: #f1c40f; font-size: 1.8em; font-weight: bold; }
         .gender-blue { color: #3498db; font-size: 1.5em; font-weight: bold; }
-
+        
+        /* Style des inputs du formulaire */
         .range-container { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
         .range-container input { width: 70px; padding: 4px; }
         button { margin-top: 15px; padding: 10px; width: 100%; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
@@ -268,12 +267,16 @@ HTML_PAGE = """
         select { width: 100%; padding: 4px; margin-top: 5px; }
 
         .page-title { width: 100%; text-align: center; background: #2c3e50; color: white; padding: 15px 0; margin: 0; font-size: 22px; letter-spacing: 1px; }
+        
+        /* Couleurs pour les labels de gravité */
         .grav { display: block; margin-bottom: 6px; font-weight: 600; }
         .grav-1 { color: blue; } .grav-2 { color: black; } .grav-3 { color: green; } .grav-4 { color: orange; }
     </style>
-
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <script>
+        // Fonction pour empêcher de choisir une heure de fin < heure de début
         function updateMaxMin() {
             const hMin = document.getElementsByName('h_min')[0];
             const hMax = document.getElementsByName('h_max')[0];
@@ -323,6 +326,7 @@ HTML_PAGE = """
                 <option value="00">00 – Indéterminable</option>
                 <option value="01">01 – Bicyclette</option>
                 <option value="07">07 – VL seul</option>
+                <option value="10">10 – VU seul</option>
                 <option value="33">33 – Moto > 125 cm3</option>
                 <option value="99">99 – Autre véhicule</option>
             </select>
@@ -425,9 +429,11 @@ HTML_PAGE = """
                     beginAtZero: true,
                     ticks: { font: { size: 10 } },
                     title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
+                    title: { display: true, text: 'Nombre accidents', font: { size: 11, weight: 'bold' } }
                 },
                 x: {
                     ticks: { font: { size: 10 } },
+                    title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                     title: { display: true, text: 'Heure', font: { size: 11, weight: 'bold' } }
                 }
             }
@@ -439,25 +445,23 @@ HTML_PAGE = """
 </body>
 </html>
 """
-
-
+### GESTION DES ROUTES FLASK ###
 @app.route("/", methods=["GET", "POST"])
 def page_principale():
+    # Gestion de la soumission du formulaire (clic sur le bouton Filtrer)
     if request.method == "POST":
+        # recup des données du formulaire
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
-
-        # Petite sécurité : si l’utilisateur met fin < début, on corrige
+        # si fin < debut, on ignore la fin pour faire une recherche d'heure précise
         if h_min != "" and h_max != "" and int(h_max) < int(h_min):
-            h_max = h_min
-
+            h_max = h_min 
+        # Transformation de la liste de cases cochées pour la gravité en chaîne avec points-virgules
         g = ";".join(request.form.getlist("gravite"))
         r = request.form.get("route", "")
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
-        dep = request.form.get("dep", "")
-
-        # On ajoute dep dans le fichier filtre
+        # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(
                 f"h_min:{h_min}\n"
@@ -471,12 +475,13 @@ def page_principale():
 
         # Génération carte filtrée
         try:
+            # on lance le script externe qui génère la carte HTML basée sur les nouveaux filtres
             subprocess.run([sys.executable, "visualisation.py"], check=True)
         except Exception as e:
             print(f"Erreur génération carte: {e}")
-
+        # Une fois le traitement fini, on redirige vers la page pour afficher les nouveaux résultats
         return redirect(url_for("page_principale"))
-
+    # Affichage de la page (GET)
     ensure_map_exists()
 
     # On prépare la liste des départements pour le select

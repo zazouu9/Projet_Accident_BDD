@@ -13,7 +13,7 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     print("Connexion à la base OK")
 
-    # 1) ACCIDENTS PAR HEURE
+    # Accidents par heure
     query_heure = """
     SELECT
         SUBSTR(hrmn, 1, 2) AS heure,
@@ -27,7 +27,7 @@ def main():
     df_heure.to_csv(os.path.join(OUT_DIR, "accidents_par_heure.csv"), index=False, encoding="utf-8")
     print("accidents_par_heure.csv est bien créé")
 
-    # 2) ACCIDENTS PAR MOIS
+    # Accidents par mois
     query_mois = """
     SELECT
         mois,
@@ -41,7 +41,7 @@ def main():
     df_mois.to_csv(os.path.join(OUT_DIR, "accidents_par_mois.csv"), index=False, encoding="utf-8")
     print("accidents_par_mois.csv bien créé")
 
-    # 3) ACCIDENTS PAR JOUR
+    # Accidents par jour
     query_jour = """
     SELECT
         jour,
@@ -55,7 +55,7 @@ def main():
     df_jour.to_csv(os.path.join(OUT_DIR, "accidents_par_jour.csv"), index=False, encoding="utf-8")
     print("accidents_par_jour.csv est bien créé")
 
-    # 4) STATISTIQUES PAR GRAVITÉ
+    # Statistiques par gravité
     query_gravite = """
     SELECT
         grav,
@@ -67,7 +67,7 @@ def main():
     df_grav.to_csv(os.path.join(OUT_DIR, "accidents_par_gravite.csv"), index=False, encoding="utf-8")
     print("accidents_par_gravite.csv créé")
 
-    # 5) ACCIDENTS PAR TYPE DE ROUTE
+    # Accidents par type de route
     query_route = """
     SELECT
         catr,
@@ -81,7 +81,7 @@ def main():
     df_route.to_csv(os.path.join(OUT_DIR, "accidents_par_type_route.csv"), index=False, encoding="utf-8")
     print("accidents_par_type_route.csv créé")
 
-    # 6) ACCIDENTS PAR SEXE
+    # Accidents par sexe
     query_sexe = """
     SELECT
         sexe,
@@ -95,7 +95,7 @@ def main():
     df_sexe.to_csv(os.path.join(OUT_DIR, "accidents_par_sexe.csv"), index=False, encoding="utf-8")
     print("accidents_par_sexe.csv créé")
 
-    # 7) DONNÉES COMPLÈTES POUR LA CARTE
+    # Données pour la carte des accidents
     # Ajout : c.dep AS dep
     # ça permet ensuite de filtrer par département dans page_web.py et visualisation.py
     query_carte = """
@@ -125,7 +125,7 @@ def main():
     df_carte.to_csv(os.path.join(OUT_DIR, "accidents_carte_complet.csv"), index=False, encoding="utf-8")
     print("accidents_carte_complet.csv créé (avec dep)")
 
-    # 8) ACCIDENTS PAR TYPE DE VÉHICULE
+    # Accidents par type de véhicule
     query_vehicule = """
     SELECT
         catv,

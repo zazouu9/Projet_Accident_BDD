@@ -8,22 +8,29 @@ import requests
 import polyline
 from math import radians, cos, sin, asin, sqrt
 
+# definition des liens vers les fichiers de donnees et les resultats
 CSV_PATH = "results/accidents_carte_complet.csv"
 FILTRE_PATH = "resultat_filtre.txt"
-
 OUT_CLUSTER = "static/carte_accidents_cluster.html"
 OUT_ANIME   = "static/carte_accidents_anime.html"
 
+
+
+# fonction pour trouver les coordonnees gps d'une ville par son nom
 def get_geocode(city_name):
     """Transforme un nom de ville en coordonnées [lat, lon]"""
     if not city_name or len(city_name) < 2: return None
     try:
+        # on interroge un service en ligne (openstreetmap) pour transformer le texte en points gps
         url = f"https://nominatim.openstreetmap.org/search?q={city_name}&format=json&limit=1"
         r = requests.get(url, headers={'User-Agent': 'MonAppSecurite/1.0'}, timeout=5)
         data = r.json()
+        # on recupere la latitude et la longitude si la ville est trouvee
         return [float(data[0]['lat']), float(data[0]['lon'])] if data else None
     except: return None
 
+# Fonction pour itinéraire
+# calcul de la distance entre deux points en tenant compte de la courbe de la terre
 def haversine(lon1, lat1, lon2, lat2):
     """Calcule la distance en km entre deux points"""
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
@@ -31,6 +38,8 @@ def haversine(lon1, lat1, lon2, lat2):
     a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
     return 2 * asin(sqrt(a)) * 6371
 
+
+# lecture du fichier texte qui contient les filtres choisis par l'utilisateur
 def read_filters_txt(path: str) -> dict:
     """Lit resultat_filtre.txt : une ligne = cle:valeur."""
     filtres = {}
@@ -45,6 +54,8 @@ def read_filters_txt(path: str) -> dict:
             filtres[k.strip()] = v.strip()
     return filtres
 
+
+# transformation d'un texte en nombre entier
 def to_int(x):
     if x is None: return None
     x = str(x).strip()
@@ -52,10 +63,12 @@ def to_int(x):
     try: return int(x)
     except: return None
 
+# choix de la couleur du point sur la carte selon la gravite de l'accident
 def grav_to_color(grav):
     try: return GRAV_TO_COLOR.get(int(grav), "gray")
     except: return "gray"
 
+# preparation du texte qui s'affiche quand on clique sur un accident
 def popup_pre(row):
     dep = str(row.get("dep", "")).strip()
     # Sécurité si jour/mois manquent
@@ -70,6 +83,7 @@ def popup_pre(row):
 
     date_str = f"{jour:02d}/{mois:02d}/2024" if (jour and mois) else "Inconnue"
 
+    # creation de la liste des informations a afficher
     lines = [
         f"Date : {date_str}",
         f"Département : {dep if dep else 'Inconnu'}",
@@ -91,6 +105,8 @@ def popup_pre(row):
     )
     return popup_html, 600
 
+
+# chargement du fichier csv et application des filtres de l'utilisateur
 def load_and_filter_df():
     if not os.path.exists(CSV_PATH):
         raise FileNotFoundError(f"Fichier introuvable: {CSV_PATH}")
@@ -103,7 +119,7 @@ def load_and_filter_df():
     if missing:
         raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
 
-    # Conversions
+    # conversion des colonnes en nombres pour pouvoir faire des calculs
     cols_to_convert = ["heure", "jour", "mois", "zone", "catr", "grav", "sexe", "catv"]
     for c in cols_to_convert:
         if c in df.columns:
@@ -117,7 +133,7 @@ def load_and_filter_df():
     f = read_filters_txt(FILTRE_PATH)
     mask = pd.Series(True, index=df.index)
 
-    # Application des filtres classiques
+    # application des filtres de temps et de lieu
     jour = to_int(f.get("jour"))
     if "jour" in df.columns and jour:
         mask &= (df["jour"] == jour)
@@ -132,6 +148,7 @@ def load_and_filter_df():
     if hmax is not None:
         mask &= (df["heure"] <= hmax)
 
+    # filtrage par gravite, route, vehicule, sexe et departement
     grav_txt = f.get("gravite", "").strip()
     if grav_txt:
         grav_list = [to_int(p) for p in grav_txt.split(";") if to_int(p) is not None]
@@ -145,7 +162,8 @@ def load_and_filter_df():
     if to_int(f.get("sexe")): mask &= (df["sexe"] == to_int(f.get("sexe")))
     if f.get("dep"): mask &= (df["dep"] == f.get("dep").strip())
 
-    # LOGIQUE ITINÉRAIRE
+    ### itinéraire ###
+    # logique pour calculer le trajet entre deux villes
     start_city = f.get("start_city", "").strip()
     end_city = f.get("end_city", "").strip()
     route_line = None
@@ -153,11 +171,15 @@ def load_and_filter_df():
     if start_city and end_city:
         c_start, c_end = get_geocode(start_city), get_geocode(end_city)
         if c_start and c_end:
+            # Appel à l'API OSRM pour obtenir l'itinéraire routier
             url = f"http://router.project-osrm.org/route/v1/driving/{c_start[1]},{c_start[0]};{c_end[1]},{c_end[0]}?overview=full"
             try:
                 r = requests.get(url).json()
                 if 'routes' in r:
+                    # decodage de la route recue sous forme de texte compresse
                     route_line = polyline.decode(r['routes'][0]['geometry'])
+                    
+                    # verification si un accident est situe a moins de 50 metres de la route
                     def is_near(lat_acc, lon_acc):
                         for lp in route_line[::15]: # Pas de 15 pour performance
                             if haversine(lon_acc, lat_acc, lp[1], lp[0]) <= 0.05: return True
@@ -166,33 +188,40 @@ def load_and_filter_df():
                     df_base = df[mask].copy()
                     mask_trajet = df_base.apply(lambda row: is_near(row['lat'], row['long']), axis=1)
                     df_res = df_base[mask_trajet]
+                    # on enregistre le nombre d'accidents sur le trajet pour la page web
                     with open("total_trajet.txt", "w") as f_score: f_score.write(str(len(df_res)))
                     return df_res, f, route_line
             except: pass
-
+    
+    # si pas de trajet, on supprime le fichier de score et on renvoie les donnees filtrees normalement
     if os.path.exists("total_trajet.txt"): os.remove("total_trajet.txt")
     return df[mask].copy(), f, None
 
 # =========================
 # MAIN
 # =========================
+# creation des dossiers et lancement du filtrage
 os.makedirs("static", exist_ok=True)
-
 df_filtre, f, route_line = load_and_filter_df()
+
 print("Filtres lus :", f)
 print("Total lignes filtrées :", len(df_filtre))
 
+# on centre la carte sur la moyenne des accidents trouves
 center = [46.2276, 2.2137]
 if not df_filtre.empty:
     center = [df_filtre["lat"].mean(), df_filtre["long"].mean()]
 
-# 1) CARTE CLUSTER
+### CARTE CLUSTER ###
+# creation de la carte avec regroupement automatique des points (cluster)
 m_cluster = folium.Map(location=center, zoom_start=6)
 cluster = MarkerCluster(name="Accidents", options={"disableClusteringAtZoom": 14}).add_to(m_cluster)
 
+### CARTE DYNAMIQUE CERCLE COLORE ###
 if df_filtre.empty:
     folium.Marker(center, popup="Aucun accident trouvé.").add_to(m_cluster)
 else:
+    # ajout de chaque accident sur la carte sous forme de cercle colore
     for _, row in df_filtre.iterrows():
         popup_html, w = popup_pre(row)
         folium.CircleMarker(
@@ -202,7 +231,8 @@ else:
             popup=folium.Popup(popup_html, max_width=w)
         ).add_to(cluster)
 
-# Ajout du tracé bleu si itinéraire
+### ITINERAIRE ###
+# dessin du trajet bleu et ajout des marqueurs depart/arrivee
 if route_line:
     folium.PolyLine(route_line, color="blue", weight=5, opacity=0.7, tooltip="Trajet").add_to(m_cluster)
     folium.Marker(route_line[0], popup="Départ", icon=folium.Icon(color='green')).add_to(m_cluster)
@@ -210,7 +240,7 @@ if route_line:
 
 m_cluster.save(OUT_CLUSTER)
 
-# 2) CARTE ANIMÉE
+### CARTE ANIMÉE ###
 m_anime = folium.Map(location=center, zoom_start=6)
 if route_line:
     folium.PolyLine(route_line, color="blue", weight=5, opacity=0.7).add_to(m_anime)
@@ -233,7 +263,7 @@ for _, row in df_filtre.iterrows():
             },
         },
     })
-
+# ajout de l'animation temporelle si des accidents sont presents
 if features:
     TimestampedGeoJson(
         data={"type": "FeatureCollection", "features": features},

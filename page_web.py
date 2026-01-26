@@ -39,6 +39,7 @@ def lire_filtres():
                     filtres[cle] = valeur
     return filtres
 
+# fonction pour charger les donnees du fichier csv avec pandas
 def load_df(csv_path="results/accidents_carte_complet.csv", dtype=str):
     """
     Charge le CSV des accidents et fait un petit nettoyage standard.
@@ -103,6 +104,7 @@ def get_departements_options(df = load_df()):
 
     return options
 
+# liste des mois pour le menu deroulant
 def get_mois_options(df = load_df()):
     if df is None or "mois" not in df.columns:
         return []
@@ -118,7 +120,7 @@ def get_mois_options(df = load_df()):
         label = MOIS_TO_LABEL.get(ci, f"Mois {ci}")
         options.append((c, label))
     return options
-
+# liste des jours (1 a 31)
 def get_jours_options(df = load_df()):
     if df is None or "jour" not in df.columns:
         return []
@@ -129,7 +131,7 @@ def get_jours_options(df = load_df()):
     codes_sorted = sorted(codes, key=lambda x: int(x))
     return [(c, c) for c in codes_sorted]
 
-
+# types de vehicules
 def get_vehicules_options(df = load_df()):
     """
     Liste des véhicules pour le <select>.
@@ -172,11 +174,13 @@ def get_vehicules_options(df = load_df()):
 
     return options
 
-
+# calcul de toutes les statistiques a afficher sur le tableau de bord
 def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
 
+    ### Itinéraire ###
+    # lecture du score de trajet si un itineraire a ete calcule
     total_trajet = 0
     if os.path.exists("total_trajet.txt"):
         try:
@@ -213,6 +217,7 @@ def obtenir_stats_completes():
 
             #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
 
+            ###  Plage horraire  ###
             # traitement du bloc "Heure" si une heure ou plage est saisie
             if h_min != "" or h_max != "":
                 h_mask = pd.Series([True] * len(df_all))
@@ -228,32 +233,32 @@ def obtenir_stats_completes():
                 # ajout du bloc à la liste si des données existent
                 blocs_actifs.append({"titre": "Heure / Plage", "label": lbl, "valeur": int(h_mask.sum())})
 
-            # traitement du bloc "Gravité" si une ou plusieurs cochées
+            ### GRAVITE ###
             if grav_filtre:
                 codes = [int(x) for x in grav_filtre.split(";") if x]
                 val = int(df_all["grav"].isin(codes).sum())
                 lbl = ", ".join([GRAV_TO_LABEL.get(c, str(c)) for c in codes])
                 blocs_actifs.append({"titre": "Gravité", "label": lbl, "valeur": val})
 
-            # Traitement du bloc "Véhicule"
+            ### VEHICULE ###
             if catv_filtre:
                 val = int((df_all["catv"] == int(catv_filtre)).sum())
                 lbl = CATV_TO_LABEL.get(int(catv_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
-
-            # Traitement du bloc "Jour"
+            
+            ### JOUR ###
             if jour_filtre:
                 val = int((df_all["jour"] == int(jour_filtre)).sum())
                 lbl = f"Le {jour_filtre}"
                 blocs_actifs.append({"titre": "Jour", "label": lbl, "valeur": val})
 
-            # Traitement du bloc "Mois"
+            ### Mois ###
             if mois_filtre:
                 val = int((df_all["mois"] == int(mois_filtre)).sum())
                 lbl = MOIS_TO_LABEL.get(int(mois_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Mois", "label": lbl, "valeur": val})
 
-            # Traitement du bloc "Type de route"
+            ### Type de route ###
             if route_filtre:
                 # route_filtre est un texte (Autoroute, Nationale, ...)
                 code_r = ROUTE_TO_CATR.get(route_filtre)
@@ -262,13 +267,13 @@ def obtenir_stats_completes():
                     lbl = route_filtre
                     blocs_actifs.append({"titre": "Route", "label": lbl, "valeur": val})
 
-            # Traitement du bloc "Sexe"
+            ### Sexe ###
             if sexe_filtre:
                 val = int((df_all["sexe"] == int(sexe_filtre)).sum())
                 lbl = SEXE_TO_LABEL.get(int(sexe_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Sexe", "label": lbl, "valeur": val})
 
-            # bloc : département
+            ### département ###
             if dep_filtre:
                 val = int((df_all["dep"] == dep_filtre).sum())
                 # affichage "code - nom" si connu
@@ -276,8 +281,9 @@ def obtenir_stats_completes():
                 lbl = f"{dep_filtre} - {nom_dep}" if nom_dep else dep_filtre
                 blocs_actifs.append({"titre": "Département", "label": lbl, "valeur": val})
 
-            # --- CUMUL GLOBAL (croisement de tous les filtres) ---
+            
             #### CALCUL CUMULÉ EN BAS A DROITE STAT ####
+            
             # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
 
@@ -316,6 +322,7 @@ def obtenir_stats_completes():
 
             df_filtre = df_all[mask_global]
 
+            ### Bandeau en bas ###
             # remplissage des statistiques pour le bandeau bleu/jaune en bas
             stats["cumul_total"] = len(df_filtre)
             stats["hommes_filtres"] = len(df_filtre[df_filtre['sexe'] == 1])
@@ -693,7 +700,7 @@ def page_principale():
                 f"end_city:{end_city}\n"
             )
 
-        # Génération carte filtrée
+        ### Génération carte filtrée ###
         try:
             # on lance le script externe qui génère la carte HTML basée sur les nouveaux filtres
             subprocess.run([sys.executable, "visualisation.py"], check=True)

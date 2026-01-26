@@ -3,21 +3,11 @@ import pandas as pd
 import os
 import subprocess
 import sys
-from dictionnaire import *
-
-# on importe maintenant les dictionnaires depuis dictionnaires.py
-from dictionnaire import (
-    DEP_TO_NAME,
-    CATV_TO_LABEL,
-    GRAV_TO_LABEL,
-    SEXE_TO_LABEL,
-    ROUTE_TO_CATR,
-    CATR_TO_ROUTE,
-)
+from dictionnaire import DEP_TO_NAME, MOIS_TO_LABEL, CATV_TO_LABEL, GRAV_TO_LABEL, SEXE_TO_LABEL, ROUTE_TO_CATR, MOIS_TO_LABEL
+import folium
 
 # on initialisation de l'application Flask
 app = Flask(__name__)
-
 
 def ensure_map_exists():
     # si aucune carte filtrée n'existe, on génère une carte vierge
@@ -49,36 +39,58 @@ def lire_filtres():
                     filtres[cle] = valeur
     return filtres
 
+def load_df(csv_path="results/accidents_carte_complet.csv", dtype=str):
+    """
+    Charge le CSV des accidents et fait un petit nettoyage standard.
+    - Renvoie un DataFrame Pandas (ou None si fichier absent/illisible)
+    - Par défaut dtype=str pour éviter les soucis de zéros (ex: "07") et de NaN
+    """
+    if not os.path.exists(csv_path):
+        return None
+
+    try:
+        df = pd.read_csv(csv_path, dtype=dtype)
+    except Exception as e:
+        print(f"[load_df] Erreur lecture CSV: {e}")
+        return None
+
+    # Normalisation simple des chaînes
+    if dtype is str:
+        for col in df.columns:
+            if df[col].dtype == "object":
+                df[col] = df[col].astype(str).str.strip()
+        df = df.replace({"nan": ""})
+
+    return df
 
 # Liste des départements possibles (pour remplir le <select>)
 # On lit le CSV carte et on récupère les valeurs uniques de la colonne dep.
-def get_departements_options():
+def get_departements_options(df = load_df()):
     """
     Renvoie une liste de tuples (code_dep, label)
     ex: ("85", "85 - Vendée")
     """
-    csv_path = "results/accidents_carte_complet.csv"
-    if not os.path.exists(csv_path):
-        return []
-
-    df = pd.read_csv(csv_path, dtype=str)
-    if "dep" not in df.columns:
+    if df is None or "dep" not in df.columns:
         return []
 
     deps = (
         df["dep"]
         .astype(str)
         .str.strip()
-        .replace({"nan": ""})
+        .replace({"nan": ""}, regex=True)
     )
+
     deps = [d for d in deps.unique().tolist() if d]
 
-    # Tri : num (01..95), puis 2A/2B, puis DOM (971...)
+    # Tri personnalisé des départements
     def dep_sort_key(d):
+        # CAS 1 : départements DOM (ex: 971, 972, 973, 974, 976)
         if d.isdigit() and len(d) == 3:
             return (3, int(d), d)   # DOM
+        # CAS 2 : départements métropolitains numériques (01 à 95)
         if d.isdigit():
             return (1, int(d), d)   # 01..95
+        # CAS 3 : départements spéciaux 2A/2B
         return (2, 0, d)            # 2A/2B
 
     deps_sorted = sorted(deps, key=dep_sort_key)
@@ -91,19 +103,40 @@ def get_departements_options():
 
     return options
 
+def get_mois_options(df = load_df()):
+    if df is None or "mois" not in df.columns:
+        return []
 
-def get_vehicules_options():
+    codes = df["mois"].astype(str).str.strip().replace({"nan": ""})
+    codes = [c for c in codes.unique().tolist() if c.isdigit()]
+
+    codes_sorted = sorted(codes, key=lambda x: int(x))
+
+    options = []
+    for c in codes_sorted:
+        ci = int(c)
+        label = MOIS_TO_LABEL.get(ci, f"Mois {ci}")
+        options.append((c, label))
+    return options
+
+def get_jours_options(df = load_df()):
+    if df is None or "jour" not in df.columns:
+        return []
+
+    codes = df["jour"].astype(str).str.strip().replace({"nan": ""})
+    codes = [c for c in codes.unique().tolist() if c.isdigit()]
+
+    codes_sorted = sorted(codes, key=lambda x: int(x))
+    return [(c, c) for c in codes_sorted]
+
+
+def get_vehicules_options(df = load_df()):
     """
     Liste des véhicules pour le <select>.
     - On lit les codes catv présents dans le CSV carte
     - On les affiche sous la forme : "10 - VU seul ..."
     """
-    csv_path = "results/accidents_carte_complet.csv"
-    if not os.path.exists(csv_path):
-        return []
-
-    df = pd.read_csv(csv_path, dtype=str)
-    if "catv" not in df.columns:
+    if df is None or "catv" not in df.columns:
         return []
 
     # On récupère les codes catv existants
@@ -115,12 +148,13 @@ def get_vehicules_options():
     )
     codes = [c for c in codes.unique().tolist() if c != ""]
 
-    # On essaie de trier numériquement
-    def sort_key(x):
+    # Tri numérique des codes
+    def sort_key(c):
         try:
-            return int(x)
+            return int(c)
         except:
-            return 99999
+            return float('inf')  # en cas de code non convertible, le mettre à la fin
+            
 
     codes_sorted = sorted(codes, key=sort_key)
 
@@ -144,7 +178,7 @@ def obtenir_stats_completes():
     filtres = lire_filtres()
 
     #  on utilise tes dictionnaires au lieu des mappings en dur
-    # (GRAV_TO_LABEL, SEXE_TO_LABEL, CATV_TO_LABEL, ROUTE_TO_CATR / CATR_TO_ROUTE)
+    # (GRAV_TO_LABEL, SEXE_TO_LABEL, CATV_TO_LABEL, ROUTE_TO_CATR, CATR_TO_ROUTE, MOIS_TO_LABEL)
 
     # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
     blocs_actifs = []
@@ -167,6 +201,8 @@ def obtenir_stats_completes():
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
 
             # extraction des valeurs des filtres depuis le dictionnaire
+            mois_filtre = filtres.get("mois", "")
+            jour_filtre = filtres.get("jour", "")
             h_min = filtres.get("h_min", "")
             h_max = filtres.get("h_max", "")
             grav_filtre = filtres.get("gravite", "")
@@ -204,6 +240,18 @@ def obtenir_stats_completes():
                 val = int((df_all["catv"] == int(catv_filtre)).sum())
                 lbl = CATV_TO_LABEL.get(int(catv_filtre), "Inconnu")
                 blocs_actifs.append({"titre": "Véhicule", "label": lbl, "valeur": val})
+
+            # Traitement du bloc "Jour"
+            if jour_filtre:
+                val = int((df_all["jour"] == int(jour_filtre)).sum())
+                lbl = f"Le {jour_filtre}"
+                blocs_actifs.append({"titre": "Jour", "label": lbl, "valeur": val})
+
+            # Traitement du bloc "Mois"
+            if mois_filtre:
+                val = int((df_all["mois"] == int(mois_filtre)).sum())
+                lbl = MOIS_TO_LABEL.get(int(mois_filtre), "Inconnu")
+                blocs_actifs.append({"titre": "Mois", "label": lbl, "valeur": val})
 
             # Traitement du bloc "Type de route"
             if route_filtre:
@@ -247,6 +295,12 @@ def obtenir_stats_completes():
 
             if catv_filtre:
                 mask_global &= (df_all["catv"] == int(catv_filtre))
+            
+            if jour_filtre:
+                mask_global &= (df_all["jour"] == int(jour_filtre))
+            
+            if mois_filtre:
+                mask_global &= (df_all["mois"] == int(mois_filtre))
 
             if route_filtre:
                 code_r = ROUTE_TO_CATR.get(route_filtre)
@@ -397,6 +451,22 @@ HTML_PAGE = """
                 <input type="number" name="h_max" min="0" max="23" placeholder="Fin">
             </div>
 
+            <label>Mois :</label>
+                <select name="mois">
+                    <option value=""> Tous les mois </option>
+                    {% for code, label in mois_options %}
+                        <option value="{{ code }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            
+            <label>Jours :</label>
+                <select name="jour">
+                    <option value=""> Tous les jours </option>
+                    {% for code, label in jours_options %}
+                        <option value="{{ code }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                
             <label>Itinéraire :</label>
             <input type="text" name="start_city" placeholder="Ville de départ (ex: Paris)" style="width: 95%; padding: 5px; margin-bottom: 5px;">
             <input type="text" name="end_city" placeholder="Ville d'arrivée (ex: Lyon)" style="width: 95%; padding: 5px; margin-bottom: 10px;">
@@ -579,6 +649,8 @@ def page_principale():
     # Gestion de la soumission du formulaire (clic sur le bouton Filtrer)
     if request.method == "POST":
         # recup des données du formulaire
+        mois = request.form.get("mois", "")
+        jour = request.form.get("jour", "")
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
 
@@ -600,6 +672,8 @@ def page_principale():
             f.write(
                 f"h_min:{h_min}\n"
                 f"h_max:{h_max}\n"
+                f"mois:{mois}\n"
+                f"jour:{jour}\n"
                 f"gravite:{g}\n"
                 f"route:{r}\n"
                 f"catv:{v}\n"
@@ -623,6 +697,8 @@ def page_principale():
     ensure_map_exists()
 
     # On prépare la liste des départements pour le select
+    mois_options = get_mois_options()
+    jours_options = get_jours_options()
     deps = get_departements_options()
     #dep_selected = lire_filtres().get("dep", "").strip()
     vehicules = get_vehicules_options()
@@ -632,11 +708,10 @@ def page_principale():
         HTML_PAGE,
         stats=obtenir_stats_completes(),
         deps=deps,
-        #dep_selected=dep_selected,
         vehicules=vehicules,
-        #catv_selected=catv_selected
+        mois_options=mois_options,
+        jours_options=jours_options
     )
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

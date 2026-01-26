@@ -12,7 +12,7 @@ source venv/bin/activate
 pip install --upgrade pip
 
 # Installation des dépendances
-pip install pandas folium flask
+pip install pandas folium flask polyline
 
 # Lancement du script de statistiques
 python stat_1.py

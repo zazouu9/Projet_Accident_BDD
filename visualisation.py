@@ -98,7 +98,7 @@ def load_and_filter_df():
     df = pd.read_csv(CSV_PATH, dtype=str)
 
     # On ne met que les colonnes vitales ici (sans jour/mois qui causaient l'erreur)
-    required_cols = ["heure", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
+    required_cols = ["heure", "jour", "mois", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
@@ -118,10 +118,13 @@ def load_and_filter_df():
     mask = pd.Series(True, index=df.index)
 
     # Application des filtres classiques
-    if "jour" in df.columns and to_int(f.get("jour")):
-        mask &= (df["jour"] == to_int(f.get("jour")))
-    if "mois" in df.columns and to_int(f.get("mois")):
-        mask &= (df["mois"] == to_int(f.get("mois")))
+    jour = to_int(f.get("jour"))
+    if "jour" in df.columns and jour:
+        mask &= (df["jour"] == jour)
+        
+    mois = to_int(f.get("mois"))
+    if "mois" in df.columns and mois:
+        mask &= (df["mois"] == mois)
 
     hmin, hmax = to_int(f.get("h_min")), to_int(f.get("h_max"))
     if hmin is not None:

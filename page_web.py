@@ -143,22 +143,22 @@ def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
 
-    #  on utilise tes dictionnaires au lieu des mappings en dur
-    # (GRAV_TO_LABEL, SEXE_TO_LABEL, CATV_TO_LABEL, ROUTE_TO_CATR / CATR_TO_ROUTE)
+    total_trajet = 0
+    if os.path.exists("total_trajet.txt"):
+        try:
+            with open("total_trajet.txt", "r") as f_trajet:
+                total_trajet = f_trajet.read().strip()
+        except: pass
 
-    # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
     blocs_actifs = []
-
-    # structure par défaut des statistiques envoyées à la page HTML
     stats = {
         "cumul_total": 0, "hommes_filtres": 0, "femmes_filtres": 0,
+        "total_trajet": total_trajet, # On ajoute cette clé
         "blocs": blocs_actifs,
         "show_chart": False, "chart_labels": [], "chart_values": []
     }
 
-    # si le fichier de filtre est vide, on renvoie les stats à zéro
-    if not filtres:
-        return stats
+    if not filtres: return stats
 
     try:
         # vérification de l'existence du fichier CSV généré par stat_1.py
@@ -490,9 +490,19 @@ HTML_PAGE = """
                 <div class="gender-blue">{{ stats.femmes_filtres }}</div>
             </div>
         </div>
-        <div class="stat-box-bottom">
-            <div style="font-size: 0.75em; opacity: 0.8;">TOTAL FILTRÉ (CROISEMENT)</div>
-            <div class="total-value">{{ stats.cumul_total }}</div>
+
+        <div style="display: flex; gap: 50px;">
+            {% if stats.total_trajet and stats.total_trajet != '0' %}
+            <div class="stat-box-bottom">
+                <div style="font-size: 0.75em; opacity: 0.8; color: #f39c12;">SUR L'ITINÉRAIRE</div>
+                <div style="color: #e74c3c; font-size: 1.8em; font-weight: bold;">{{ stats.total_trajet }}</div>
+            </div>
+            {% endif %}
+
+            <div class="stat-box-bottom">
+                <div style="font-size: 0.75em; opacity: 0.8;">TOTAL FILTRÉ (GÉNÉRAL)</div>
+                <div class="total-value">{{ stats.cumul_total }}</div>
+            </div>
         </div>
     </div>
 </div>

@@ -101,6 +101,8 @@ def main():
     query_carte = """
     SELECT DISTINCT
         SUBSTR(c.hrmn, 1, 2) AS heure,
+        c.jour AS jour,
+        c.mois AS mois,
         c.dep AS dep,
         c.agg AS zone,
         l.catr,

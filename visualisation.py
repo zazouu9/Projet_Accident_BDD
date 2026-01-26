@@ -49,7 +49,8 @@ def grav_to_color(grav):
 def popup_pre(row):
     # Ajout dep dans le popup (plus clair pour l’utilisateur)
     dep = str(row.get("dep", "")).strip()
-
+    jour = int(row["jour"])
+    mois = int(row["mois"])
     heure = int(row["heure"])
     zone = int(row["zone"])
     catr = int(row["catr"])
@@ -58,6 +59,7 @@ def popup_pre(row):
     catv = int(row["catv"])
 
     lines = [
+        f"Date : {jour:02d}/{mois:02d}/2024",
         f"Département : {dep if dep else 'Inconnu'}",
         f"Heure : {heure}h",
         f"Zone : {ZONE_TO_LABEL.get(zone, 'Inconnu')} ({zone})",
@@ -86,13 +88,17 @@ def load_and_filter_df():
     df = pd.read_csv(CSV_PATH, dtype=str)
 
     # Ajout dep dans les colonnes obligatoires
-    required_cols = ["heure", "dep", "zone", "catr", "grav", "sexe", "catv", "lat", "long"]
+    required_cols = [
+        "heure", "jour", "mois", "dep",
+        "zone", "catr", "grav", "sexe", "catv",
+        "lat", "long"
+    ]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Colonnes manquantes dans le CSV: {missing}")
 
     # conversions (on garde dep en string pour préserver 2A/2B/971 etc.)
-    for c in ["heure", "zone", "catr", "grav", "sexe", "catv"]:
+    for c in ["heure", "jour", "mois", "zone", "catr", "grav", "sexe", "catv"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
     df["dep"] = df["dep"].astype(str).str.strip()
@@ -104,6 +110,15 @@ def load_and_filter_df():
     # LECTURE FILTRES
     f = read_filters_txt(FILTRE_PATH)
     mask = pd.Series(True, index=df.index)
+
+    # FILTRE JOUR
+    jour = to_int(f.get("jour"))
+    if jour is not None:
+        mask &= (df["jour"] == jour)    
+    # FILTRE MOIS
+    mois = to_int(f.get("mois"))
+    if mois is not None:
+        mask &= (df["mois"] == mois)
 
     # FILTRE HEURE MIN/MAX
     hmin = to_int(f.get("h_min"))

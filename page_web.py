@@ -2,10 +2,10 @@ from flask import Flask, request, render_template_string, redirect, url_for
 import pandas as pd
 import os
 import subprocess
-import folium
 import sys
+from dictionnaire import *
 
-# On importe maintenant les dictionnaires depuis dictionnaires.py
+# on importe maintenant les dictionnaires depuis dictionnaires.py
 from dictionnaire import (
     DEP_TO_NAME,
     CATV_TO_LABEL,
@@ -13,11 +13,9 @@ from dictionnaire import (
     SEXE_TO_LABEL,
     ROUTE_TO_CATR,
     CATR_TO_ROUTE,
-    MOIS_TO_LABEL
-
 )
 
-# On initialise l'application Flask
+# on initialisation de l'application Flask
 app = Flask(__name__)
 
 
@@ -145,7 +143,7 @@ def obtenir_stats_completes():
     # on récup les filtres
     filtres = lire_filtres()
 
-    #On utilise tes dictionnaires au lieu des mappings en dur
+    #  on utilise tes dictionnaires au lieu des mappings en dur
     # (GRAV_TO_LABEL, SEXE_TO_LABEL, CATV_TO_LABEL, ROUTE_TO_CATR / CATR_TO_ROUTE)
 
     # liste qui contiendra les blocs de statistiques à afficher à gauche (affichage dynamique)
@@ -169,8 +167,6 @@ def obtenir_stats_completes():
             df_all = pd.read_csv("results/accidents_carte_complet.csv")
 
             # extraction des valeurs des filtres depuis le dictionnaire
-            jour_filtre = filtres.get("jour", "")
-            mois_filtre = filtres.get("mois", "")   
             h_min = filtres.get("h_min", "")
             h_max = filtres.get("h_max", "")
             grav_filtre = filtres.get("gravite", "")
@@ -181,27 +177,7 @@ def obtenir_stats_completes():
 
             #### CALCULS INDIVIDUELS POUR LES BLOCS DE GAUCHE ####
 
-            # traitement du bloc "Jour" si un jour est saisi
-            if jour_filtre:
-                val = int((df_all["jour"] == int(jour_filtre)).sum())
-                blocs_actifs.append({
-                    "titre": "Jour",
-                    "label": f"Jour {jour_filtre}",
-                    "valeur": val
-                })
-            # traitement du bloc "Mois" si un mois est saisi
-            if mois_filtre:
-                mois_i = int(mois_filtre)
-                val = int((df_all["mois"] == mois_i).sum())
-                blocs_actifs.append({
-                    "titre": "Mois",
-                    "label": MOIS_TO_LABEL.get(mois_i, f"Mois {mois_i}"),
-                    "valeur": val
-                })
-
-            
             # traitement du bloc "Heure" si une heure ou plage est saisie
-            
             if h_min != "" or h_max != "":
                 h_mask = pd.Series([True] * len(df_all))
                 if h_min != "" and h_max == "":
@@ -257,14 +233,7 @@ def obtenir_stats_completes():
             # on initialise un masque (filtre) qui accepte tout par défaut
             mask_global = pd.Series([True] * len(df_all))
 
-            
             # application successive de tous les filtres actifs pour le bandeau du bas et la carte
-            if jour_filtre:
-                mask_global &= (df_all["jour"] == int(jour_filtre))
-
-            if mois_filtre:
-                mask_global &= (df_all["mois"] == int(mois_filtre))
-
             if h_min != "" and h_max == "":
                 mask_global &= (df_all["heure"] == int(h_min))
             else:
@@ -421,28 +390,16 @@ HTML_PAGE = """
         <h3>Filtres</h3>
 
         <form method="post">
-            <div class="ligne-filtres">
-                <div class="filtre">
-                    <label>Jour :</label>
-                    <input type="number" name="jour" min="1" max="31">
-                </div>
-
-                <div class="filtre">
-                    <label>Mois :</label>
-                    <select name="mois">
-                        <option value="">Tous les mois</option>
-                        {% for num, nom in MOIS_TO_LABEL.items() %}
-                            <option value="{{ num }}">{{ nom }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
             <label>Plage Horaire :</label>
             <div class="range-container">
                 <input type="number" name="h_min" min="0" max="23" placeholder="Début" oninput="updateMaxMin()">
                 <span>à</span>
                 <input type="number" name="h_max" min="0" max="23" placeholder="Fin">
             </div>
+
+            <label>Itinéraire :</label>
+            <input type="text" name="start_city" placeholder="Ville de départ (ex: Paris)" style="width: 95%; padding: 5px; margin-bottom: 5px;">
+            <input type="text" name="end_city" placeholder="Ville d'arrivée (ex: Lyon)" style="width: 95%; padding: 5px; margin-bottom: 10px;">
 
             <fieldset><legend>Gravité</legend>
                 <label class="grav grav-1"><input type="checkbox" name="gravite" value="1"> Indemne</label>
@@ -622,8 +579,6 @@ def page_principale():
     # Gestion de la soumission du formulaire (clic sur le bouton Filtrer)
     if request.method == "POST":
         # recup des données du formulaire
-        jour = request.form.get("jour", "")
-        mois = request.form.get("mois", "")
         h_min = request.form.get("h_min", "")
         h_max = request.form.get("h_max", "")
 
@@ -637,21 +592,22 @@ def page_principale():
         v = request.form.get("catv", "")
         s = request.form.get("sexe", "")
         dep = request.form.get("dep", "")
+        start_city = request.form.get("start_city", "")
+        end_city = request.form.get("end_city", "")
 
         # on écrit les choix dans un fichier texte pour que visualisation.py puisse les lire
         with open("resultat_filtre.txt", "w", encoding="utf-8") as f:
             f.write(
-                    f"h_min:{h_min}\n"
-                    f"h_max:{h_max}\n"
-                    f"jour:{jour}\n"
-                    f"mois:{mois}\n"
-                    f"gravite:{g}\n"
-                    f"route:{r}\n"
-                    f"catv:{v}\n"
-                    f"sexe:{s}\n"
-                    f"dep:{dep}\n"
-        )
-            
+                f"h_min:{h_min}\n"
+                f"h_max:{h_max}\n"
+                f"gravite:{g}\n"
+                f"route:{r}\n"
+                f"catv:{v}\n"
+                f"sexe:{s}\n"
+                f"dep:{dep}\n"
+                f"start_city:{start_city}\n"
+                f"end_city:{end_city}\n"
+            )
 
         # Génération carte filtrée
         try:
@@ -679,7 +635,6 @@ def page_principale():
         #dep_selected=dep_selected,
         vehicules=vehicules,
         #catv_selected=catv_selected
-        MOIS_TO_LABEL=MOIS_TO_LABEL
     )
 
 

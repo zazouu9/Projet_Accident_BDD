@@ -157,7 +157,7 @@ def load_and_filter_df():
                     route_line = polyline.decode(r['routes'][0]['geometry'])
                     def is_near(lat_acc, lon_acc):
                         for lp in route_line[::15]: # Pas de 15 pour performance
-                            if haversine(lon_acc, lat_acc, lp[1], lp[0]) <= 0.8: return True
+                            if haversine(lon_acc, lat_acc, lp[1], lp[0]) <= 0.05: return True
                         return False
                     
                     df_base = df[mask].copy()
